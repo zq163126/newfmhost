@@ -1,0 +1,40 @@
+name: Auto Renew Server
+
+on:
+ # schedule:
+    # 每天的 HKT (香港时间) 早上 08:00 自动运行 (对应 UTC 00:00)
+   # - cron: '0 0 * * *'
+  workflow_dispatch: # 允许在 GitHub 页面上手动点击运行
+
+jobs:
+  renew:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Install Playwright Browsers
+      run: |
+        # 仅安装必要的 chromium 浏览器及其系统级依赖
+        playwright install chromium --with-deps
+
+    - name: Run Auto Renew Script
+      env:
+        WEB_EMAIL: ${{ secrets.WEB_EMAIL }}
+        WEB_PASSWORD: ${{ secrets.WEB_PASSWORD }}
+        TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+        TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+      run: |
+        python main.py
