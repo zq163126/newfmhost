@@ -81,17 +81,24 @@ def run():
             print("3. 点击 Sign in...")
             page.locator('button[type="submit"]:has-text("Sign in")').click()
 
-            # 等待登录后的页面加载完成
-            page.wait_for_load_state("networkidle")
+            # --- 新增：判断是否成功登录并跳转至系统后台 URL ---
+            print("4. 正在验证登录状态（等待页面跳转至后台）...")
+            try:
+                # 等待 URL 匹配到包含 /app 的控制台页面，超时设为 15 秒
+                page.wait_for_url("**/app**", timeout=15000, wait_until="networkidle")
+                print("-> 成功检测到后台特征 URL，登录验证通过！")
+            except Exception as url_err:
+                # 如果超时未跳转，说明大概率停留在登录页，直接抛出定制错误
+                raise RuntimeError(f"登录状态验证失败。页面未按预期跳转到后台系统 (当前 URL: {page.url})。可能存在验证码拦截或凭据错误。")
 
-            print("4. 正在跳转至服务器面板页面...")
-            # 登录后直接跳转至指定的具体服务器 URL，确保直达目的地
+            print("5. 正在跳转至指定的目标服务器面板页面...")
+            # 登录确认成功后，直接跳转至指定的具体服务器 URL
             page.goto(
                 "https://new.freemchost.com/app/servers/7aa14245-4754-47ba-9bf9-d76da413761d",
                 wait_until="networkidle",
             )
 
-            print("5. 正在寻找并点击 Manage 标签页...")
+            print("6. 正在寻找并点击 Manage 标签页...")
             # 使用 role="tab" 并匹配文本 "Manage"，不依赖任何动态 ID
             manage_tab = page.locator('button[role="tab"]:has-text("Manage")')
             manage_tab.wait_for(state="visible", timeout=15000)
@@ -100,20 +107,20 @@ def run():
             # 等待计时器组件刷新渲染
             page.wait_for_timeout(2000)
 
-            print("6. 正在获取 Renew 操作前的时间...")
+            print("7. 正在获取 Renew 操作前的时间...")
             time_before = get_remaining_time(page)
             print(f"-> 续期前时间: {time_before}")
 
-            print("7. 正在点击 Renew now 按钮...")
+            print("8. 正在点击 Renew now 按钮...")
             # 定位包含 "Renew now" 文本的按钮
             renew_btn = page.locator('button:has-text("Renew now")')
             renew_btn.click()
 
             # 等待续期操作响应以及数据刷新
-            print("8. 等待数据更新...")
+            print("9. 等待数据更新...")
             page.wait_for_timeout(5000)
 
-            print("9. 正在获取 Renew 操作后的时间...")
+            print("10. 正在获取 Renew 操作后的时间...")
             time_after = get_remaining_time(page)
             print(f"-> 续期后时间: {time_after}")
 
@@ -132,7 +139,7 @@ def run():
 
         except Exception as e:
             print(f"❌ 运行过程中发生错误: {e}")
-            # 发生错误时尝试抓取当前屏幕便于排查问题
+            # 发生错误时尝试抓取当前屏幕（如登录失败处的画面），以便推送到 Telegram 供你排查
             try:
                 page.screenshot(path=screenshot_path, full_page=True)
                 error_msg = f"❌ **Freemchost 自动续期任务失败**\n\n**错误原因**: `{str(e)}`"
