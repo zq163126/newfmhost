@@ -112,8 +112,8 @@ def run():
             print(f"-> 续期前时间: {time_before}")
 
             print("8. 正在点击 Renew now 按钮...")
-            # 定位包含 "Renew now" 文本的按钮
-            renew_btn = page.locator('button:has-text("Renew now")')
+            # 定位包含 "Renew now" 文本的按钮 (使用 .first 规避多按钮时的 strict mode 报错)
+            renew_btn = page.locator('button:has-text("Renew now")').first
             renew_btn.click()
 
             # --- 应对网站改版：等待弹窗并点击 48 hours 续期选项按钮 ---
