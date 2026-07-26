@@ -40,17 +40,17 @@ def send_telegram_message(text, photo_path=None):
 
 
 def get_remaining_time(page):
-    """鲁棒性更强的剩余时间获取函数"""
-    # 优先等待带 role="timer" 的元素在 DOM 中附加并可见
+    """获取当前的剩余续期时间"""
+    # 使用 role="timer" 定位 (使用 .first 确保精准匹配第一个计时器节点)
     timer_element = page.locator('div[role="timer"]').first
     timer_element.wait_for(state="visible", timeout=15000)
 
-    # 尝试从 aria-label 属性直接提取时间字符串 (如 "0d 6h 36m 8s remaining")
+    # 提取 aria-label 属性值
     aria_label = timer_element.get_attribute("aria-label")
     if aria_label:
         return aria_label
 
-    # 如果无法提取 aria-label，备选方案：拼接子元素中的文本 (如 "00 d 06 h 36 m 08 s")
+    # 如果属性获取不到，尝试提取子元素的文本拼接
     text_content = timer_element.inner_text()
     clean_text = re.sub(r"\s+", " ", text_content).strip()
     return clean_text if clean_text else "未知时间"
@@ -66,7 +66,7 @@ def run():
     with sync_playwright() as p:
         # 使用无头模式启动浏览器
         browser = p.chromium.launch(headless=True)
-        # 设置窗口大小
+        # 设置窗口大小以防截图显示不全
         context = browser.new_context(viewport={"width": 1280, "height": 800})
         page = context.new_page()
 
@@ -81,58 +81,55 @@ def run():
             print("3. 点击 Sign in...")
             page.locator('button[type="submit"]:has-text("Sign in")').click()
 
-            # 验证登录状态
+            # --- 新增：判断是否成功登录并跳转至系统后台 URL ---
             print("4. 正在验证登录状态（等待页面跳转至后台）...")
             try:
+                # 等待 URL 匹配到包含 /app 的控制台页面，超时设为 15 秒
                 page.wait_for_url("**/app**", timeout=15000, wait_until="networkidle")
                 print("-> 成功检测到后台特征 URL，登录验证通过！")
             except Exception as url_err:
-                raise RuntimeError(
-                    f"登录状态验证失败。页面未按预期跳转到后台系统 (当前 URL: {page.url})。"
-                )
+                # 如果超时未跳转，说明大概率停留在登录页，直接抛出定制错误
+                raise RuntimeError(f"登录状态验证失败。页面未按预期跳转到后台系统 (当前 URL: {page.url})。可能存在验证码拦截或凭据错误。")
 
             print("5. 正在跳转至指定的目标服务器面板页面...")
+            # 登录确认成功后，直接跳转至指定的具体服务器 URL
             page.goto(
                 "https://new.freemchost.com/app/servers/7aa14245-4754-47ba-9bf9-d76da413761d",
                 wait_until="networkidle",
             )
 
             print("6. 正在寻找并点击 Manage 标签页...")
+            # 使用 role="tab" 并匹配文本 "Manage"，不依赖任何动态 ID
             manage_tab = page.locator('button[role="tab"]:has-text("Manage")')
             manage_tab.wait_for(state="visible", timeout=15000)
             manage_tab.click()
 
-            # 等待 Manage 内容区域刷新完毕
+            # 等待计时器组件刷新渲染
             page.wait_for_timeout(2000)
 
             print("7. 正在获取 Renew 操作前的时间...")
             time_before = get_remaining_time(page)
             print(f"-> 续期前时间: {time_before}")
 
-            print("8. 正在点击 Renew now 主按钮...")
+            print("8. 正在点击 Renew now 按钮...")
+            # 定位包含 "Renew now" 文本的按钮
             renew_btn = page.locator('button:has-text("Renew now")')
             renew_btn.click()
 
-            print("9. 等待弹窗出现，准备点击 48 hours 续期选项...")
-            # 优先精准定位包含 "48 hours" 的按钮
+            # --- 应对网站改版：等待弹窗并点击 48 hours 续期选项按钮 ---
             option_btn = page.locator('button:has-text("48 hours")')
-
-            # 容错后备：如果匹配不到 "48 hours"，尝试通过描述语 "Quick top-up" 来匹配
-            if option_btn.count() == 0:
-                option_btn = page.locator('button:has-text("Quick top-up")')
-
             option_btn.wait_for(state="visible", timeout=10000)
             option_btn.click()
 
-            # 等待续期请求完成及页面重新渲染
-            print("10. 等待数据更新与弹窗关闭...")
+            # 等待续期操作响应以及数据刷新
+            print("9. 等待数据更新...")
             page.wait_for_timeout(5000)
 
-            print("11. 正在获取 Renew 操作后的时间...")
+            print("10. 正在获取 Renew 操作后的时间...")
             time_after = get_remaining_time(page)
             print(f"-> 续期后时间: {time_after}")
 
-            # 截取全屏结果
+            # 成功操作后截图保存
             page.screenshot(path=screenshot_path, full_page=True)
 
             # 组装通知信息
@@ -147,6 +144,7 @@ def run():
 
         except Exception as e:
             print(f"❌ 运行过程中发生错误: {e}")
+            # 发生错误时尝试抓取当前屏幕（如登录失败处的画面），以便推送到 Telegram 供你排查
             try:
                 page.screenshot(path=screenshot_path, full_page=True)
                 error_msg = f"❌ **Freemchost 自动续期任务失败**\n\n**错误原因**: `{str(e)}`"
