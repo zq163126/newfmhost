@@ -117,7 +117,7 @@ def run():
             renew_btn.click()
 
             # --- 应对网站改版：等待弹窗并点击 48 hours 续期选项按钮 ---
-            option_btn = page.locator('button:has-text("Renew now")')
+            option_btn = page.locator('button:has-text("Discord Boosted renewal — your linked Discord account gives you extra free time")')
             option_btn.wait_for(state="visible", timeout=10000)
             option_btn.click()
 
