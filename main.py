@@ -131,26 +131,23 @@ def dismiss_ads(page):
                 pass
 
 
-def wait_and_click(page, locator, timeout_ms=15000):
-    """边去广告边等待元素，确保元素不被广告遮罩卡死超时"""
-    start_time = time.time()
-    while (time.time() - start_time) * 1000 < timeout_ms:
-        # 1. 每次等待循环前都强制进行一次空白点击去广告
+def wait_and_click(page, locator, max_attempts=10):
+    """彻底跳过 is_visible 检查，采用：点空白处去广告 -> 强制点击目标 的重试循环"""
+    for attempt in range(max_attempts):
+        # 1. 强制点击空白处消灭可能的遮罩
         dismiss_ads(page)
 
-        # 2. 检查目标元素是否已可见
+        # 2. 尝试强制点击目标元素，避开 Playwright 严格的可见性检查
         try:
-            if locator.is_visible():
-                locator.click(force=True)
-                return True
+            locator.click(force=True, timeout=1500)
+            print(f"-> 成功点击目标元素（第 {attempt + 1} 次尝试）")
+            return True
         except Exception:
-            pass
+            # 没点击成功说明元素可能还在加载中，等待后继续重试
+            page.wait_for_timeout(1000)
 
-        page.wait_for_timeout(1000)
-
-    # 超时后最后尝试一次强制点击
-    dismiss_ads(page)
-    locator.click(force=True)
+    # 超过最大尝试次数，抛出更清晰的提示
+    raise RuntimeError(f"未能成功点击目标元素 ({locator})，即使已多次进行去广告重试。")
 
 
 def human_mouse_click(page, locator):
@@ -242,8 +239,8 @@ def run():
 
             print("6. 正在寻找并点击 Manage 标签页...")
             manage_tab = page.locator('button[role="tab"]:has-text("Manage")')
-            # 使用边去广告边等待点击的策略，防止被遮罩卡死超时
-            wait_and_click(page, manage_tab, timeout_ms=15000)
+            # 采用全新的强行点击 + 去广告重试逻辑
+            wait_and_click(page, manage_tab, max_attempts=12)
 
             page.wait_for_timeout(2000)
 
@@ -253,7 +250,7 @@ def run():
 
             print("8. 正在点击 Renew now 按钮...")
             renew_btn = page.locator('button:has-text("Renew now")').first
-            wait_and_click(page, renew_btn, timeout_ms=10000)
+            wait_and_click(page, renew_btn, max_attempts=8)
 
             print("9. 正在定位并点击 72 hours 续期选项按钮...")
             dismiss_ads(page)
