@@ -45,51 +45,31 @@ def capture_step(page, step_name, screenshot_path="step_temp.png"):
     print(f"📸 正在捕获过程截图: {step_name}")
     try:
         page.screenshot(path=screenshot_path, full_page=True)
-        send_telegram_message(f"📍 **进度调试**: {step_name}\n🔗 当前 URL: `{page.url}`", screenshot_path)
+        send_telegram_message(
+            f"📍 **进度调试**: {step_name}\n🔗 当前 URL: `{page.url}`", screenshot_path
+        )
     except Exception as e:
         print(f"捕获或发送过程截图失败: {e}")
 
 
-def mark_click_point(page, x, y):
-    """在页面指定坐标绘制一个红点 marker，方便在截图中追踪点击位置"""
+def dismiss_ads(page):
+    """纯 DOM/CSS 级去广告函数（已完全移除鼠标点击空白逻辑）"""
+    # 1. 直接注入 CSS 隐藏掉常见的广告遮罩，不干扰真实 DOM 节点点击
     try:
-        page.evaluate(
-            """
-            ([x, y]) => {
-                const dot = document.createElement('div');
-                dot.style.position = 'fixed';
-                dot.style.left = (x - 10) + 'px';
-                dot.style.top = (y - 10) + 'px';
-                dot.style.width = '20px';
-                dot.style.height = '20px';
-                dot.style.backgroundColor = 'rgba(255, 0, 0, 0.85)';
-                dot.style.borderRadius = '50%';
-                dot.style.border = '2px solid white';
-                dot.style.boxShadow = '0 0 10px rgba(255, 0, 0, 0.8)';
-                dot.style.zIndex = '999999';
-                dot.style.pointerEvents = 'none'; // 确保标记点不阻挡后续点击
-                document.body.appendChild(dot);
+        page.add_style_tag(
+            content="""
+            iframe[src*="google"], iframe[src*="ad"], 
+            [id*="google_ads"], [class*="ad-container"],
+            div[class*="backdrop"]:not([role="dialog"]) {
+                display: none !important;
+                pointer-events: none !important;
             }
-            """,
-            [x, y],
+        """
         )
     except Exception:
         pass
 
-
-def dismiss_ads(page):
-    """优化版去广告函数：最优先点击空白处（width - 250, 200）清理遮罩"""
-    try:
-        viewport = page.viewport_size or {"width": 1280, "height": 800}
-        safe_x = viewport["width"] - 250
-        safe_y = 200
-        mark_click_point(page, safe_x, safe_y)
-        page.mouse.click(safe_x, safe_y)
-        page.wait_for_timeout(300)
-    except Exception:
-        pass
-
-    # 注入 JS 关弹窗
+    # 2. 注入 JS 寻找明确的 Close 按钮进行触发
     js_close_script = """
     () => {
         const closeIcons = Array.from(document.querySelectorAll('svg.lucide-x, #dismiss-button'));
@@ -116,7 +96,7 @@ def dismiss_ads(page):
         except Exception:
             pass
 
-    # Playwright 常规 Selector 清理
+    # 3. 定位带有明确 Close 属性的标签
     ad_selectors = [
         'button:has(svg.lucide-x)',
         'button:has-text("Close")',
@@ -142,21 +122,17 @@ def dismiss_ads(page):
 
 
 def wait_and_click(page, locator, max_attempts=10):
-    """彻底跳过 is_visible 检查，采用：点空白处去广告 -> 强制点击目标 的重试循环"""
+    """等待并点击，移除了盲目点击空白逻辑，采用常规轮询"""
     for attempt in range(max_attempts):
-        # 1. 强制点击空白处消灭可能的遮罩
         dismiss_ads(page)
 
-        # 2. 尝试强制点击目标元素，避开 Playwright 严格的可见性检查
         try:
             locator.first.click(force=True, timeout=1500)
             print(f"-> 成功点击目标元素（第 {attempt + 1} 次尝试）")
             return True
         except Exception:
-            # 没点击成功说明元素可能还在加载中，等待后继续重试
             page.wait_for_timeout(1000)
 
-    # 超过最大尝试次数，抛出更清晰的提示
     raise RuntimeError(f"未能成功点击目标元素 ({locator})，当前页面 URL: {page.url}")
 
 
@@ -164,7 +140,6 @@ def human_mouse_click(page, locator):
     """定位元素并使用模拟真实鼠标轨迹移动点击"""
     locator.wait_for(state="attached", timeout=10000)
 
-    # 确保元素进入视图
     locator.scroll_into_view_if_needed()
     page.wait_for_timeout(300)
 
@@ -173,7 +148,6 @@ def human_mouse_click(page, locator):
         locator.click(force=True)
         return
 
-    # 计算目标中心点并加微小的随机偏移，模仿真人点击
     target_x = box["x"] + box["width"] / 2 + random.uniform(-3, 3)
     target_y = box["y"] + box["height"] / 2 + random.uniform(-3, 3)
 
@@ -239,15 +213,17 @@ def run():
                     f"登录状态验证失败。页面未按预期跳转到后台系统 (当前 URL: {page.url})。"
                 )
 
-            # --- 第 5 步开始：每步执行完后截图并发送 Telegram 通知 ---
+            # --- 第 5 步：导航到具体服务器区域 ---
 
             print("5. 正在跳转至指定的目标服务器面板页面...")
             page.goto(
                 "https://freemchost.com/app/servers/7aa14245-4754-47ba-9bf9-d76da413761d",
                 wait_until="networkidle",
             )
+            # 等待 React DOM 及数据就绪
+            page.wait_for_timeout(2000)
             dismiss_ads(page)
-            capture_step(page, "步骤 5: 已跳转到目标服务器页面并进行首次去广告")
+            capture_step(page, "步骤 5: 已跳转到目标服务器页面")
 
             print("6. 正在寻找并点击 Manage 标签页...")
             manage_tab = page.locator(
