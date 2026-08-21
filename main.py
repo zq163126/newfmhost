@@ -178,7 +178,8 @@ def get_remaining_time(page):
 
 def should_renew(time_str):
     """判断剩余时间是否小于等于 1 天 (True 代表需要续期，False 代表不需要续期)"""
-    match = re.search(r"(\d+)\s*day", time_str, re.IGNORECASE)
+    # 增强版正则：支持 "3d 7h...", "3 d", "3 days", "3 day" 等格式
+    match = re.search(r"(\d+)\s*(?:d|day)", time_str, re.IGNORECASE)
     if match:
         days = int(match.group(1))
         if days > 1:
@@ -262,7 +263,6 @@ def run():
             print("9. 基于 Discord Boost 固定文本定位并点击续期确认按钮...")
             dismiss_ads(page)
 
-            # 通过固定文本定位对应的容器并抓取内部的提交/确认按钮
             discord_section = page.locator(
                 'div:has-text("Discord Boosted renewal — your linked Discord account gives you extra free time.")'
             ).last
