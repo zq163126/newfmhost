@@ -41,9 +41,16 @@ def send_telegram_message(text, photo_path=None):
 
 
 def dismiss_ads(page):
-    """通用去广告/关闭弹窗函数，具备极高鲁棒性（支持跨 iframe 穿透与强行触发点击）"""
+    """通用去广告/关闭弹窗函数（包含空白处点击 + 跨 iframe 穿透与强行触发关闭按钮）"""
+    # 1. 在页面边缘空白处 (0, 0 区域) 点击一下以关闭支持点击背景关闭的遮罩层广告
+    try:
+        page.mouse.click(10, 10)
+        page.wait_for_timeout(300)
+    except Exception:
+        pass
+
+    # 2. 针对具备实体关闭按钮的弹窗进行探测与强制关闭
     ad_selectors = [
-        # 精准匹配你提供的 Close 按钮特征（匹配按钮内含有 lucide-x 类或 sr-only 文本 Close）
         'button:has(svg.lucide-x)',
         'button:has-text("Close")',
         'button:has(span:has-text("Close"))',
@@ -64,14 +71,14 @@ def dismiss_ads(page):
                     if el.is_visible(timeout=500):
                         print(f"-> 检测到弹窗/广告 ({selector})，正在尝试关闭...")
                         try:
-                            # 1. 优先使用普通点击
+                            # 优先普通点击
                             el.click(timeout=1000)
                         except Exception:
                             try:
-                                # 2. 若被遮挡或动画拦截，使用强制点击
+                                # 若被遮挡或动画拦截，使用强制点击
                                 el.click(force=True, timeout=1000)
                             except Exception:
-                                # 3. 保底使用 JS 原生事件触发点击
+                                # 保底使用 JS 原生事件触发点击
                                 el.dispatch_event("click")
                         page.wait_for_timeout(300)
             except Exception:
