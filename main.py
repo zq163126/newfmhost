@@ -53,8 +53,7 @@ def capture_step(page, step_name, screenshot_path="step_temp.png"):
 
 
 def dismiss_ads(page):
-    """纯 DOM/CSS 级去广告函数（已完全移除鼠标点击空白逻辑）"""
-    # 1. 直接注入 CSS 隐藏掉常见的广告遮罩，不干扰真实 DOM 节点点击
+    """纯 DOM/CSS 级去广告函数"""
     try:
         page.add_style_tag(
             content="""
@@ -69,7 +68,6 @@ def dismiss_ads(page):
     except Exception:
         pass
 
-    # 2. 注入 JS 寻找明确的 Close 按钮进行触发
     js_close_script = """
     () => {
         const closeIcons = Array.from(document.querySelectorAll('svg.lucide-x, #dismiss-button'));
@@ -96,7 +94,6 @@ def dismiss_ads(page):
         except Exception:
             pass
 
-    # 3. 定位带有明确 Close 属性的标签
     ad_selectors = [
         'button:has(svg.lucide-x)',
         'button:has-text("Close")',
@@ -122,7 +119,7 @@ def dismiss_ads(page):
 
 
 def wait_and_click(page, locator, max_attempts=10):
-    """等待并点击，移除了盲目点击空白逻辑，采用常规轮询"""
+    """等待并强制点击元素"""
     for attempt in range(max_attempts):
         dismiss_ads(page)
 
@@ -179,6 +176,16 @@ def get_remaining_time(page):
     return clean_text if clean_text else "未知时间"
 
 
+def should_renew(time_str):
+    """判断剩余时间是否小于等于 1 天 (True 代表需要续期，False 代表不需要续期)"""
+    match = re.search(r"(\d+)\s*day", time_str, re.IGNORECASE)
+    if match:
+        days = int(match.group(1))
+        if days > 1:
+            return False
+    return True
+
+
 def run():
     if not EMAIL or not PASSWORD:
         print("错误: 环境变量中未检测到 EMAIL 或 PASSWORD。")
@@ -213,14 +220,11 @@ def run():
                     f"登录状态验证失败。页面未按预期跳转到后台系统 (当前 URL: {page.url})。"
                 )
 
-            # --- 第 5 步：导航到具体服务器区域 ---
-
             print("5. 正在跳转至指定的目标服务器面板页面...")
             page.goto(
                 "https://freemchost.com/app/servers/2f12a6bd-a1c1-4cc1-bd32-8becf1925680",
                 wait_until="networkidle",
             )
-            # 等待 React DOM 及数据就绪
             page.wait_for_timeout(2000)
             dismiss_ads(page)
             capture_step(page, "步骤 5: 已跳转到目标服务器页面")
@@ -233,21 +237,39 @@ def run():
             page.wait_for_timeout(2000)
             capture_step(page, "步骤 6: 已点击 Manage 标签页")
 
-            print("7. 正在获取 Renew 操作前的时间...")
+            print("7. 正在获取 Renew 操作前的时间并进行判断...")
             time_before = get_remaining_time(page)
-            print(f"-> 续期前时间: {time_before}")
+            print(f"-> 当前剩余续期时间: {time_before}")
             capture_step(page, f"步骤 7: 已读取续期前时间 ({time_before})")
 
-            print("8. 正在点击 Renew now 按钮...")
+            # 校验时间：如果剩余时间大于 1 天，终止操作直接退出
+            if not should_renew(time_before):
+                msg = (
+                    f"ℹ️ **Freemchost 自动续期跳过**\n\n"
+                    f"👤 **账号**: `{EMAIL}`\n"
+                    f"⏳ **当前剩余时间**: {time_before}\n"
+                    f"💡 **提示**: 剩余时间大于 1 天，无需续期，已自动退出任务。"
+                )
+                print(f"-> {msg}")
+                send_telegram_message(msg, "step_temp.png")
+                return
+
+            print("8. 剩余时间小于等于 1 天，正在点击 Renew now 按钮...")
             renew_btn = page.locator('button:has-text("Renew now")')
             wait_and_click(page, renew_btn, max_attempts=8)
             capture_step(page, "步骤 8: 已点击 Renew now 按钮")
 
-            print("9. 正在定位并点击 72 hours 续期选项按钮...")
+            print("9. 基于 Discord Boost 固定文本定位并点击续期确认按钮...")
             dismiss_ads(page)
-            option_btn_72h = page.locator('button:has-text("72 hours")').first
-            human_mouse_click(page, option_btn_72h)
-            capture_step(page, "步骤 9: 已点击 72 hours 续期选项")
+
+            # 通过固定文本定位对应的容器并抓取内部的提交/确认按钮
+            discord_section = page.locator(
+                'div:has-text("Discord Boosted renewal — your linked Discord account gives you extra free time.")'
+            ).last
+            option_btn = discord_section.locator('button').first
+
+            human_mouse_click(page, option_btn)
+            capture_step(page, "步骤 9: 已点击基于 Discord Boost 锚点定位的续期按钮")
 
             print("10. 等待数据更新...")
             page.wait_for_timeout(5000)
@@ -259,7 +281,6 @@ def run():
             print(f"-> 续期后时间: {time_after}")
             capture_step(page, f"步骤 11: 续期结束，最新时间: {time_after}")
 
-            # 保存最终成功汇总截图
             page.screenshot(path=screenshot_path, full_page=True)
 
             report_msg = (
