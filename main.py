@@ -40,26 +40,83 @@ def send_telegram_message(text, photo_path=None):
             print(f"发送 Telegram 截图失败: {e}")
 
 
-def dismiss_ads(page):
-    """通用去广告/关闭弹窗函数，具备极高鲁棒性（包含 (0,0) 空白处点击与 Close 按钮强行触发）"""
-    # 1. 优先在页面 (0, 0) 空白坐标点击一下以关闭可遮罩点击的广告
+def mark_click_point(page, x, y):
+    """在页面指定坐标绘制一个红点 marker，方便在截图中追踪点击位置"""
     try:
-        page.mouse.click(0, 0)
+        page.evaluate(
+            """
+            ([x, y]) => {
+                const dot = document.createElement('div');
+                dot.style.position = 'fixed';
+                dot.style.left = (x - 10) + 'px';
+                dot.style.top = (y - 10) + 'px';
+                dot.style.width = '20px';
+                dot.style.height = '20px';
+                dot.style.backgroundColor = 'rgba(255, 0, 0, 0.85)';
+                dot.style.borderRadius = '50%';
+                dot.style.border = '2px solid white';
+                dot.style.boxShadow = '0 0 10px rgba(255, 0, 0, 0.8)';
+                dot.style.zIndex = '999999';
+                dot.style.pointerEvents = 'none'; // 确保标记点不阻挡后续点击
+                document.body.appendChild(dot);
+            }
+            """,
+            [x, y],
+        )
+    except Exception:
+        pass
+
+
+def dismiss_ads(page):
+    """优化版去广告函数：安全右上空白点 + JS 向上查找 button 强行触发"""
+    # 1. 在右上角无功能按钮的纯空白安全区域 (width - 50, 50) 点击以触发弹窗遮罩层关闭
+    try:
+        viewport = page.viewport_size or {"width": 1280, "height": 800}
+        safe_x = viewport["width"] - 50
+        safe_y = 50
+        mark_click_point(page, safe_x, safe_y)
+        page.mouse.click(safe_x, safe_y)
         page.wait_for_timeout(300)
     except Exception:
         pass
 
+    # 2. 注入 JS：精准搜寻带有 lucide-x 的 svg，并找到其最近的 button 父级节点触发点击
+    js_close_script = """
+    () => {
+        // 查找包含 Close 或 class 为 lucide-x 的 SVG/元素
+        const closeIcons = Array.from(document.querySelectorAll('svg.lucide-x, #dismiss-button'));
+        for (const icon of closeIcons) {
+            const btn = icon.closest('button') || icon;
+            if (btn && typeof btn.click === 'function') {
+                btn.click();
+            }
+        }
+        // 额外查找包含 sr-only 且文本为 Close 的 span 节点的父级按钮
+        const srCloses = Array.from(document.querySelectorAll('span.sr-only'));
+        for (const span of srCloses) {
+            if (span.textContent.trim() === 'Close') {
+                const btn = span.closest('button');
+                if (btn) btn.click();
+            }
+        }
+    }
+    """
+
+    frames = [page] + page.frames
+    for frame in frames:
+        try:
+            frame.evaluate(js_close_script)
+        except Exception:
+            pass
+
+    # 3. Playwright 备用常规定位点击
     ad_selectors = [
-        # 精准匹配 Close 按钮特征（匹配按钮内含有 lucide-x 类或 sr-only 文本 Close）
         'button:has(svg.lucide-x)',
         'button:has-text("Close")',
         'button:has(span:has-text("Close"))',
         '//*[@id="dismiss-button"]',
         'button[aria-label="Close"]',
     ]
-
-    # 获取主页面以及所有可能嵌套广告的 iframe
-    frames = [page] + page.frames
 
     for frame in frames:
         for selector in ad_selectors:
@@ -68,25 +125,22 @@ def dismiss_ads(page):
                 count = elements.count()
                 for i in range(count):
                     el = elements.nth(i)
-                    if el.is_visible(timeout=500):
+                    if el.is_visible(timeout=300):
                         print(f"-> 检测到弹窗/广告 ({selector})，正在尝试关闭...")
                         try:
-                            # 1. 优先使用普通点击
-                            el.click(timeout=1000)
+                            box = el.bounding_box()
+                            if box:
+                                mark_click_point(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+                            el.click(force=True, timeout=1000)
                         except Exception:
-                            try:
-                                # 2. 若被遮挡或动画拦截，使用强制点击
-                                el.click(force=True, timeout=1000)
-                            except Exception:
-                                # 3. 保底使用 JS 原生事件触发点击
-                                el.dispatch_event("click")
+                            el.dispatch_event("click")
                         page.wait_for_timeout(300)
             except Exception:
                 pass
 
 
 def human_mouse_click(page, locator):
-    """定位元素并使用模拟真实鼠标轨迹移动点击"""
+    """定位元素并在对应位置打红点后，使用模拟真实鼠标轨迹移动点击"""
     locator.wait_for(state="attached", timeout=10000)
 
     # 确保元素进入视图
@@ -103,7 +157,7 @@ def human_mouse_click(page, locator):
     target_x = box["x"] + box["width"] / 2 + random.uniform(-3, 3)
     target_y = box["y"] + box["height"] / 2 + random.uniform(-3, 3)
 
-    # 随机产生一个起始点坐标（例如屏幕上方或当前大致位置）
+    # 随机产生一个起始点坐标
     start_x = random.randint(100, 500)
     start_y = random.randint(100, 500)
 
@@ -116,6 +170,9 @@ def human_mouse_click(page, locator):
         time.sleep(random.uniform(0.005, 0.015))
 
     page.wait_for_timeout(random.randint(100, 200))
+    
+    # 点击前在真实点击位置打红点（供截图查看）
+    mark_click_point(page, target_x, target_y)
     page.mouse.click(target_x, target_y)
 
 
@@ -161,7 +218,11 @@ def run():
 
             print("3. 点击 Sign in...")
             dismiss_ads(page)
-            page.locator('button[type="submit"]:has-text("Sign in")').click()
+            signin_btn = page.locator('button[type="submit"]:has-text("Sign in")')
+            box = signin_btn.bounding_box()
+            if box:
+                mark_click_point(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+            signin_btn.click()
 
             # --- 判断是否成功登录并跳转至系统后台 URL ---
             print("4. 正在验证登录状态（等待页面跳转至后台）...")
@@ -187,6 +248,9 @@ def run():
             # 使用 role="tab" 并匹配文本 "Manage"，不依赖任何动态 ID
             manage_tab = page.locator('button[role="tab"]:has-text("Manage")')
             manage_tab.wait_for(state="visible", timeout=15000)
+            box = manage_tab.bounding_box()
+            if box:
+                mark_click_point(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
             manage_tab.click()
 
             # 等待计时器组件刷新渲染
@@ -201,6 +265,9 @@ def run():
             dismiss_ads(page)
             # 定位包含 "Renew now" 文本的按钮 (使用 .first 规避多按钮时的 strict mode 报错)
             renew_btn = page.locator('button:has-text("Renew now")').first
+            box = renew_btn.bounding_box()
+            if box:
+                mark_click_point(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
             renew_btn.click()
 
             # --- 应对网站最新改版：等待弹窗并使用模拟轨迹点击 72 hours 续期选项按钮 ---
