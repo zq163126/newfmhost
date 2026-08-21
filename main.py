@@ -41,35 +41,51 @@ def send_telegram_message(text, photo_path=None):
 
 
 def dismiss_ads(page):
-    """通用去广告/关闭弹窗函数，具备极高鲁棒性"""
+    """通用去广告/关闭弹窗函数，具备极高鲁棒性（支持跨 iframe 穿透与强行触发点击）"""
     ad_selectors = [
-        '//*[@id="dismiss-button"]',
-        'button:has(span.sr-only:has-text("Close"))',
+        # 精准匹配你提供的 Close 按钮特征（匹配按钮内含有 lucide-x 类或 sr-only 文本 Close）
         'button:has(svg.lucide-x)',
+        'button:has-text("Close")',
+        'button:has(span:has-text("Close"))',
+        '//*[@id="dismiss-button"]',
         'button[aria-label="Close"]',
     ]
-    for selector in ad_selectors:
-        try:
-            elements = page.locator(selector)
-            count = elements.count()
-            for i in range(count):
-                el = elements.nth(i)
-                if el.is_visible():
-                    print(f"-> 检测到弹窗/广告 ({selector})，正在尝试关闭...")
-                    el.click(timeout=2000)
-                    page.wait_for_timeout(500)
-        except Exception:
-            pass
+
+    # 获取主页面以及所有可能嵌套广告的 iframe
+    frames = [page] + page.frames
+
+    for frame in frames:
+        for selector in ad_selectors:
+            try:
+                elements = frame.locator(selector)
+                count = elements.count()
+                for i in range(count):
+                    el = elements.nth(i)
+                    if el.is_visible(timeout=500):
+                        print(f"-> 检测到弹窗/广告 ({selector})，正在尝试关闭...")
+                        try:
+                            # 1. 优先使用普通点击
+                            el.click(timeout=1000)
+                        except Exception:
+                            try:
+                                # 2. 若被遮挡或动画拦截，使用强制点击
+                                el.click(force=True, timeout=1000)
+                            except Exception:
+                                # 3. 保底使用 JS 原生事件触发点击
+                                el.dispatch_event("click")
+                        page.wait_for_timeout(300)
+            except Exception:
+                pass
 
 
 def human_mouse_click(page, locator):
     """定位元素并使用模拟真实鼠标轨迹移动点击"""
     locator.wait_for(state="attached", timeout=10000)
-    
+
     # 确保元素进入视图
     locator.scroll_into_view_if_needed()
     page.wait_for_timeout(300)
-    
+
     box = locator.bounding_box()
     if not box:
         # 如果获取不到坐标，降级使用常规 click 触发
@@ -140,7 +156,7 @@ def run():
             dismiss_ads(page)
             page.locator('button[type="submit"]:has-text("Sign in")').click()
 
-            # --- 新增：判断是否成功登录并跳转至系统后台 URL ---
+            # --- 判断是否成功登录并跳转至系统后台 URL ---
             print("4. 正在验证登录状态（等待页面跳转至后台）...")
             try:
                 # 等待 URL 匹配到包含 /app 的控制台页面，超时设为 15 秒
@@ -148,7 +164,9 @@ def run():
                 print("-> 成功检测到后台特征 URL，登录验证通过！")
             except Exception as url_err:
                 # 如果超时未跳转，说明大概率停留在登录页，直接抛出定制错误
-                raise RuntimeError(f"登录状态验证失败。页面未按预期跳转到后台系统 (当前 URL: {page.url})。可能存在验证码拦截或凭据错误。")
+                raise RuntimeError(
+                    f"登录状态验证失败。页面未按预期跳转到后台系统 (当前 URL: {page.url})。可能存在验证码拦截或凭据错误。"
+                )
 
             print("5. 正在跳转至指定的目标服务器面板页面...")
             # 登录确认成功后，直接跳转至指定的具体服务器 URL
@@ -181,10 +199,10 @@ def run():
             # --- 应对网站最新改版：等待弹窗并使用模拟轨迹点击 72 hours 续期选项按钮 ---
             print("9. 正在定位并点击 72 hours 续期选项按钮...")
             dismiss_ads(page)
-            
+
             # 使用高鲁棒性的组合定位策略：匹配包含 72 hours 文本的按钮容器
             option_btn_72h = page.locator('button:has-text("72 hours")').first
-            
+
             # 采用平滑移动与物理模拟点击
             human_mouse_click(page, option_btn_72h)
 
