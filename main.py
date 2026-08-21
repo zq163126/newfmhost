@@ -122,7 +122,7 @@ def run():
             option_btn.click()
 
             # 等待续期操作响应以及数据刷新
-            print("9. 等待数据更新...")
+            print("9. 已点击 Discord Boosted renewal — your linked Discord account gives you extra free time 等待数据更新...")
             page.wait_for_timeout(5000)
 
             print("10. 正在获取 Renew 操作后的时间...")
