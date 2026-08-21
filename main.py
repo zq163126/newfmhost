@@ -94,7 +94,7 @@ def run():
             print("5. 正在跳转至指定的目标服务器面板页面...")
             # 登录确认成功后，直接跳转至指定的具体服务器 URL
             page.goto(
-                "https://new.freemchost.com/app/servers/7aa14245-4754-47ba-9bf9-d76da413761d",
+                "https://new.freemchost.com/app/servers/2f12a6bd-a1c1-4cc1-bd32-8becf1925680",
                 wait_until="networkidle",
             )
 
