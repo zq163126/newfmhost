@@ -217,7 +217,7 @@ def run():
 
             print("5. 正在跳转至指定的目标服务器面板页面...")
             page.goto(
-                "https://freemchost.com/app/servers/7aa14245-4754-47ba-9bf9-d76da413761d",
+                "https://freemchost.com/app/servers/2f12a6bd-a1c1-4cc1-bd32-8becf1925680",
                 wait_until="networkidle",
             )
             # 等待 React DOM 及数据就绪
