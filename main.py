@@ -40,6 +40,16 @@ def send_telegram_message(text, photo_path=None):
             print(f"发送 Telegram 截图失败: {e}")
 
 
+def capture_step(page, step_name, screenshot_path="step_temp.png"):
+    """辅助函数：打日志、截图并即时发送 Telegram 进度"""
+    print(f"📸 正在捕获过程截图: {step_name}")
+    try:
+        page.screenshot(path=screenshot_path, full_page=True)
+        send_telegram_message(f"📍 **进度调试**: {step_name}\n🔗 当前 URL: `{page.url}`", screenshot_path)
+    except Exception as e:
+        print(f"捕获或发送过程截图失败: {e}")
+
+
 def mark_click_point(page, x, y):
     """在页面指定坐标绘制一个红点 marker，方便在截图中追踪点击位置"""
     try:
@@ -139,7 +149,7 @@ def wait_and_click(page, locator, max_attempts=10):
 
         # 2. 尝试强制点击目标元素，避开 Playwright 严格的可见性检查
         try:
-            locator.click(force=True, timeout=1500)
+            locator.first.click(force=True, timeout=1500)
             print(f"-> 成功点击目标元素（第 {attempt + 1} 次尝试）")
             return True
         except Exception:
@@ -147,7 +157,7 @@ def wait_and_click(page, locator, max_attempts=10):
             page.wait_for_timeout(1000)
 
     # 超过最大尝试次数，抛出更清晰的提示
-    raise RuntimeError(f"未能成功点击目标元素 ({locator})，即使已多次进行去广告重试。")
+    raise RuntimeError(f"未能成功点击目标元素 ({locator})，当前页面 URL: {page.url}")
 
 
 def human_mouse_click(page, locator):
@@ -209,7 +219,7 @@ def run():
 
         try:
             print("1. 正在访问登录页面...")
-            page.goto("https://new.freemchost.com/login", wait_until="networkidle")
+            page.goto("https://freemchost.com/login", wait_until="networkidle")
             dismiss_ads(page)
 
             print("2. 正在输入凭据...")
@@ -223,53 +233,61 @@ def run():
             print("4. 正在验证登录状态（等待页面跳转至后台）...")
             try:
                 page.wait_for_url("**/app**", timeout=15000, wait_until="networkidle")
-                print("-> 成功检测到后台特征 URL，登录验证通过！")
+                print(f"-> 成功检测到后台特征 URL，当前位置: {page.url}")
             except Exception:
                 raise RuntimeError(
                     f"登录状态验证失败。页面未按预期跳转到后台系统 (当前 URL: {page.url})。"
                 )
 
+            # --- 第 5 步开始：每步执行完后截图并发送 Telegram 通知 ---
+
             print("5. 正在跳转至指定的目标服务器面板页面...")
             page.goto(
-                "https://new.freemchost.com/app/servers/7aa14245-4754-47ba-9bf9-d76da413761d",
+                "https://freemchost.com/app/servers/7aa14245-4754-47ba-9bf9-d76da413761d",
                 wait_until="networkidle",
             )
-            # 跳转后第一时间清除全局广告遮罩
             dismiss_ads(page)
+            capture_step(page, "步骤 5: 已跳转到目标服务器页面并进行首次去广告")
 
             print("6. 正在寻找并点击 Manage 标签页...")
-            manage_tab = page.locator('button[role="tab"]:has-text("Manage")')
-            # 采用全新的强行点击 + 去广告重试逻辑
+            manage_tab = page.locator(
+                'button[role="tab"]:has-text("Manage"), button:has-text("Manage")'
+            )
             wait_and_click(page, manage_tab, max_attempts=12)
-
             page.wait_for_timeout(2000)
+            capture_step(page, "步骤 6: 已点击 Manage 标签页")
 
             print("7. 正在获取 Renew 操作前的时间...")
             time_before = get_remaining_time(page)
             print(f"-> 续期前时间: {time_before}")
+            capture_step(page, f"步骤 7: 已读取续期前时间 ({time_before})")
 
             print("8. 正在点击 Renew now 按钮...")
-            renew_btn = page.locator('button:has-text("Renew now")').first
+            renew_btn = page.locator('button:has-text("Renew now")')
             wait_and_click(page, renew_btn, max_attempts=8)
+            capture_step(page, "步骤 8: 已点击 Renew now 按钮")
 
             print("9. 正在定位并点击 72 hours 续期选项按钮...")
             dismiss_ads(page)
             option_btn_72h = page.locator('button:has-text("72 hours")').first
             human_mouse_click(page, option_btn_72h)
+            capture_step(page, "步骤 9: 已点击 72 hours 续期选项")
 
             print("10. 等待数据更新...")
             page.wait_for_timeout(5000)
             dismiss_ads(page)
+            capture_step(page, "步骤 10: 续期等待完成，准备读取最新时间")
 
             print("11. 正在获取 Renew 操作后的时间...")
             time_after = get_remaining_time(page)
             print(f"-> 续期后时间: {time_after}")
+            capture_step(page, f"步骤 11: 续期结束，最新时间: {time_after}")
 
-            # 保存成功截图
+            # 保存最终成功汇总截图
             page.screenshot(path=screenshot_path, full_page=True)
 
             report_msg = (
-                f"🎉 **Freemchost 自动续期任务执行成功**\n\n"
+                f"🎉 **Freemchost 自动续期任务全部成功**\n\n"
                 f"👤 **账号**: `{EMAIL}`\n"
                 f"⏳ **续期前剩余**: {time_before}\n"
                 f"⏳ **续期后剩余**: {time_after}\n"
@@ -280,7 +298,6 @@ def run():
         except Exception as e:
             print(f"❌ 运行过程中发生错误: {e}")
             try:
-                # 发生异常时，先去一次广告并抓取现场截图，确保发送的截图能真实反映异常时的页面
                 dismiss_ads(page)
                 page.screenshot(path=screenshot_path, full_page=True)
                 error_msg = f"❌ **Freemchost 自动续期任务失败**\n\n**错误原因**: `{str(e)}`"
