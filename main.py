@@ -68,8 +68,7 @@ def mark_click_point(page, x, y):
 
 
 def dismiss_ads(page):
-    """优化版去广告函数：增加向左向下偏置的安全空白点点击"""
-    # 1. 优先点击空白处关闭广告 (坐标：width - 250, 200)
+    """优化版去广告函数：最优先点击空白处（width - 250, 200）清理遮罩"""
     try:
         viewport = page.viewport_size or {"width": 1280, "height": 800}
         safe_x = viewport["width"] - 250
@@ -80,10 +79,9 @@ def dismiss_ads(page):
     except Exception:
         pass
 
-    # 2. 注入 JS：精准搜寻带有 lucide-x 的 svg，并找到其最近的 button 父级节点触发点击
+    # 注入 JS 关弹窗
     js_close_script = """
     () => {
-        // 查找包含 Close 或 class 为 lucide-x 的 SVG/元素
         const closeIcons = Array.from(document.querySelectorAll('svg.lucide-x, #dismiss-button'));
         for (const icon of closeIcons) {
             const btn = icon.closest('button') || icon;
@@ -91,7 +89,6 @@ def dismiss_ads(page):
                 btn.click();
             }
         }
-        // 额外查找包含 sr-only 且文本为 Close 的 span 节点的父级按钮
         const srCloses = Array.from(document.querySelectorAll('span.sr-only'));
         for (const span of srCloses) {
             if (span.textContent.trim() === 'Close') {
@@ -109,7 +106,7 @@ def dismiss_ads(page):
         except Exception:
             pass
 
-    # 3. Playwright 备用常规定位点击
+    # Playwright 常规 Selector 清理
     ad_selectors = [
         'button:has(svg.lucide-x)',
         'button:has-text("Close")',
@@ -125,18 +122,35 @@ def dismiss_ads(page):
                 count = elements.count()
                 for i in range(count):
                     el = elements.nth(i)
-                    if el.is_visible(timeout=300):
-                        print(f"-> 检测到弹窗/广告 ({selector})，正在尝试关闭...")
+                    if el.is_visible(timeout=200):
                         try:
-                            box = el.bounding_box()
-                            if box:
-                                mark_click_point(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
-                            el.click(force=True, timeout=1000)
+                            el.click(force=True, timeout=500)
                         except Exception:
                             el.dispatch_event("click")
-                        page.wait_for_timeout(300)
             except Exception:
                 pass
+
+
+def wait_and_click(page, locator, timeout_ms=15000):
+    """边去广告边等待元素，确保元素不被广告遮罩卡死超时"""
+    start_time = time.time()
+    while (time.time() - start_time) * 1000 < timeout_ms:
+        # 1. 每次等待循环前都强制进行一次空白点击去广告
+        dismiss_ads(page)
+
+        # 2. 检查目标元素是否已可见
+        try:
+            if locator.is_visible():
+                locator.click(force=True)
+                return True
+        except Exception:
+            pass
+
+        page.wait_for_timeout(1000)
+
+    # 超时后最后尝试一次强制点击
+    dismiss_ads(page)
+    locator.click(force=True)
 
 
 def human_mouse_click(page, locator):
@@ -149,7 +163,6 @@ def human_mouse_click(page, locator):
 
     box = locator.bounding_box()
     if not box:
-        # 如果获取不到坐标，降级使用常规 click 触发
         locator.click(force=True)
         return
 
@@ -157,11 +170,9 @@ def human_mouse_click(page, locator):
     target_x = box["x"] + box["width"] / 2 + random.uniform(-3, 3)
     target_y = box["y"] + box["height"] / 2 + random.uniform(-3, 3)
 
-    # 随机产生一个起始点坐标
     start_x = random.randint(100, 500)
     start_y = random.randint(100, 500)
 
-    # 步进式模拟鼠标移动轨迹
     steps = random.randint(10, 25)
     for i in range(1, steps + 1):
         curr_x = start_x + (target_x - start_x) * (i / steps)
@@ -175,16 +186,13 @@ def human_mouse_click(page, locator):
 
 def get_remaining_time(page):
     """获取当前的剩余续期时间"""
-    # 使用 role="timer" 定位 (使用 .first 确保精准匹配第一个计时器节点)
     timer_element = page.locator('div[role="timer"]').first
     timer_element.wait_for(state="visible", timeout=15000)
 
-    # 提取 aria-label 属性值
     aria_label = timer_element.get_attribute("aria-label")
     if aria_label:
         return aria_label
 
-    # 如果属性获取不到，尝试提取子元素的文本拼接
     text_content = timer_element.inner_text()
     clean_text = re.sub(r"\s+", " ", text_content).strip()
     return clean_text if clean_text else "未知时间"
@@ -198,9 +206,7 @@ def run():
     screenshot_path = "result.png"
 
     with sync_playwright() as p:
-        # 使用无头模式启动浏览器
         browser = p.chromium.launch(headless=True)
-        # 设置窗口大小以防截图显示不全
         context = browser.new_context(viewport={"width": 1280, "height": 800})
         page = context.new_page()
 
@@ -214,17 +220,16 @@ def run():
             page.locator("#password").fill(PASSWORD)
 
             print("3. 点击 Sign in...")
-            dismiss_ads(page)
-            page.locator('button[type="submit"]:has-text("Sign in")').click()
+            signin_btn = page.locator('button[type="submit"]:has-text("Sign in")')
+            wait_and_click(page, signin_btn)
 
-            # --- 判断是否成功登录并跳转至系统后台 URL ---
             print("4. 正在验证登录状态（等待页面跳转至后台）...")
             try:
                 page.wait_for_url("**/app**", timeout=15000, wait_until="networkidle")
                 print("-> 成功检测到后台特征 URL，登录验证通过！")
-            except Exception as url_err:
+            except Exception:
                 raise RuntimeError(
-                    f"登录状态验证失败。页面未按预期跳转到后台系统 (当前 URL: {page.url})。可能存在验证码拦截或凭据错误。"
+                    f"登录状态验证失败。页面未按预期跳转到后台系统 (当前 URL: {page.url})。"
                 )
 
             print("5. 正在跳转至指定的目标服务器面板页面...")
@@ -232,37 +237,29 @@ def run():
                 "https://new.freemchost.com/app/servers/7aa14245-4754-47ba-9bf9-d76da413761d",
                 wait_until="networkidle",
             )
+            # 跳转后第一时间清除全局广告遮罩
             dismiss_ads(page)
 
             print("6. 正在寻找并点击 Manage 标签页...")
             manage_tab = page.locator('button[role="tab"]:has-text("Manage")')
-            manage_tab.wait_for(state="visible", timeout=15000)
-            manage_tab.click()
+            # 使用边去广告边等待点击的策略，防止被遮罩卡死超时
+            wait_and_click(page, manage_tab, timeout_ms=15000)
 
-            # 等待计时器组件刷新渲染
             page.wait_for_timeout(2000)
-            dismiss_ads(page)
 
             print("7. 正在获取 Renew 操作前的时间...")
             time_before = get_remaining_time(page)
             print(f"-> 续期前时间: {time_before}")
 
             print("8. 正在点击 Renew now 按钮...")
-            dismiss_ads(page)
             renew_btn = page.locator('button:has-text("Renew now")').first
-            renew_btn.click()
+            wait_and_click(page, renew_btn, timeout_ms=10000)
 
-            # --- 应对网站最新改版：等待弹窗并使用模拟轨迹点击 72 hours 续期选项按钮 ---
             print("9. 正在定位并点击 72 hours 续期选项按钮...")
             dismiss_ads(page)
-
-            # 使用高鲁棒性的组合定位策略：匹配包含 72 hours 文本的按钮容器
             option_btn_72h = page.locator('button:has-text("72 hours")').first
-
-            # 采用平滑移动与物理模拟点击
             human_mouse_click(page, option_btn_72h)
 
-            # 等待续期操作响应以及数据刷新
             print("10. 等待数据更新...")
             page.wait_for_timeout(5000)
             dismiss_ads(page)
@@ -271,10 +268,9 @@ def run():
             time_after = get_remaining_time(page)
             print(f"-> 续期后时间: {time_after}")
 
-            # 成功操作后截图保存
+            # 保存成功截图
             page.screenshot(path=screenshot_path, full_page=True)
 
-            # 组装通知信息
             report_msg = (
                 f"🎉 **Freemchost 自动续期任务执行成功**\n\n"
                 f"👤 **账号**: `{EMAIL}`\n"
@@ -287,10 +283,12 @@ def run():
         except Exception as e:
             print(f"❌ 运行过程中发生错误: {e}")
             try:
+                # 发生异常时，先去一次广告并抓取现场截图，确保发送的截图能真实反映异常时的页面
+                dismiss_ads(page)
                 page.screenshot(path=screenshot_path, full_page=True)
                 error_msg = f"❌ **Freemchost 自动续期任务失败**\n\n**错误原因**: `{str(e)}`"
                 send_telegram_message(error_msg, screenshot_path)
-            except:
+            except Exception:
                 send_telegram_message(
                     f"❌ **Freemchost 自动续期任务失败**\n\n**错误原因**: `{str(e)}` (未能截取到画面)"
                 )
