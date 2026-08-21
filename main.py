@@ -68,8 +68,8 @@ def mark_click_point(page, x, y):
 
 
 def dismiss_ads(page):
-    """优化版去广告函数：向左向下调整后的安全空白点 + JS 向上查找 button 强行触发"""
-    # 1. 在右上角无功能按钮的纯空白安全区域 (width - 250, 200) 点击以触发弹窗遮罩层关闭
+    """优化版去广告函数：增加向左向下偏置的安全空白点点击"""
+    # 1. 优先点击空白处关闭广告 (坐标：width - 250, 200)
     try:
         viewport = page.viewport_size or {"width": 1280, "height": 800}
         safe_x = viewport["width"] - 250
@@ -140,7 +140,7 @@ def dismiss_ads(page):
 
 
 def human_mouse_click(page, locator):
-    """定位元素并在对应位置打红点后，使用模拟真实鼠标轨迹移动点击"""
+    """定位元素并使用模拟真实鼠标轨迹移动点击"""
     locator.wait_for(state="attached", timeout=10000)
 
     # 确保元素进入视图
@@ -170,9 +170,6 @@ def human_mouse_click(page, locator):
         time.sleep(random.uniform(0.005, 0.015))
 
     page.wait_for_timeout(random.randint(100, 200))
-    
-    # 点击前在真实点击位置打红点（供截图查看）
-    mark_click_point(page, target_x, target_y)
     page.mouse.click(target_x, target_y)
 
 
@@ -218,26 +215,19 @@ def run():
 
             print("3. 点击 Sign in...")
             dismiss_ads(page)
-            signin_btn = page.locator('button[type="submit"]:has-text("Sign in")')
-            box = signin_btn.bounding_box()
-            if box:
-                mark_click_point(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
-            signin_btn.click()
+            page.locator('button[type="submit"]:has-text("Sign in")').click()
 
             # --- 判断是否成功登录并跳转至系统后台 URL ---
             print("4. 正在验证登录状态（等待页面跳转至后台）...")
             try:
-                # 等待 URL 匹配到包含 /app 的控制台页面，超时设为 15 秒
                 page.wait_for_url("**/app**", timeout=15000, wait_until="networkidle")
                 print("-> 成功检测到后台特征 URL，登录验证通过！")
             except Exception as url_err:
-                # 如果超时未跳转，说明大概率停留在登录页，直接抛出定制错误
                 raise RuntimeError(
                     f"登录状态验证失败。页面未按预期跳转到后台系统 (当前 URL: {page.url})。可能存在验证码拦截或凭据错误。"
                 )
 
             print("5. 正在跳转至指定的目标服务器面板页面...")
-            # 登录确认成功后，直接跳转至指定的具体服务器 URL
             page.goto(
                 "https://new.freemchost.com/app/servers/7aa14245-4754-47ba-9bf9-d76da413761d",
                 wait_until="networkidle",
@@ -245,12 +235,8 @@ def run():
             dismiss_ads(page)
 
             print("6. 正在寻找并点击 Manage 标签页...")
-            # 使用 role="tab" 并匹配文本 "Manage"，不依赖任何动态 ID
             manage_tab = page.locator('button[role="tab"]:has-text("Manage")')
             manage_tab.wait_for(state="visible", timeout=15000)
-            box = manage_tab.bounding_box()
-            if box:
-                mark_click_point(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
             manage_tab.click()
 
             # 等待计时器组件刷新渲染
@@ -263,11 +249,7 @@ def run():
 
             print("8. 正在点击 Renew now 按钮...")
             dismiss_ads(page)
-            # 定位包含 "Renew now" 文本的按钮 (使用 .first 规避多按钮时的 strict mode 报错)
             renew_btn = page.locator('button:has-text("Renew now")').first
-            box = renew_btn.bounding_box()
-            if box:
-                mark_click_point(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
             renew_btn.click()
 
             # --- 应对网站最新改版：等待弹窗并使用模拟轨迹点击 72 hours 续期选项按钮 ---
@@ -304,7 +286,6 @@ def run():
 
         except Exception as e:
             print(f"❌ 运行过程中发生错误: {e}")
-            # 发生错误时尝试抓取当前屏幕（如登录失败处的画面），以便推送到 Telegram 供你排查
             try:
                 page.screenshot(path=screenshot_path, full_page=True)
                 error_msg = f"❌ **Freemchost 自动续期任务失败**\n\n**错误原因**: `{str(e)}`"
