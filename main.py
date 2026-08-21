@@ -68,12 +68,12 @@ def mark_click_point(page, x, y):
 
 
 def dismiss_ads(page):
-    """优化版去广告函数：安全右上空白点 + JS 向上查找 button 强行触发"""
-    # 1. 在右上角无功能按钮的纯空白安全区域 (width - 50, 50) 点击以触发弹窗遮罩层关闭
+    """优化版去广告函数：向左向下调整后的安全空白点 + JS 向上查找 button 强行触发"""
+    # 1. 在右上角无功能按钮的纯空白安全区域 (width - 250, 200) 点击以触发弹窗遮罩层关闭
     try:
         viewport = page.viewport_size or {"width": 1280, "height": 800}
-        safe_x = viewport["width"] - 50
-        safe_y = 50
+        safe_x = viewport["width"] - 250
+        safe_y = 200
         mark_click_point(page, safe_x, safe_y)
         page.mouse.click(safe_x, safe_y)
         page.wait_for_timeout(300)
