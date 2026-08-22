@@ -249,19 +249,19 @@ def run():
             print(f"-> 当前剩余续期时间: {time_before} (折合 {total_hours} 小时)")
             capture_step(page, f"步骤 7: 已读取续期前时间 ({time_before}, {total_hours}h)")
 
-            # 统一按小时判断：若大于 48 小时则无需续期直接退出
+            # 统一按小时判断：若大于 36 小时则无需续期直接退出
             if total_hours > 36:
                 msg = (
                     f"ℹ️ **Freemchost 自动续期跳过**\n\n"
                     f"👤 **账号**: `{EMAIL}`\n"
                     f"⏳ **当前剩余时间**: {time_before} (约 {total_hours} 小时)\n"
-                    f"💡 **提示**: 剩余时间大于 48 小时，无需续期，已自动退出任务。"
+                    f"💡 **提示**: 剩余时间大于 36 小时，无需续期，已自动退出任务。"
                 )
                 print(f"-> {msg}")
                 send_telegram_message(msg, "step_temp.png")
                 return
 
-            print("8. 剩余时间小于等于 48 小时，正在点击 Renew now 按钮...")
+            print("8. 剩余时间小于等于 36 小时，正在点击 Renew now 按钮...")
             renew_btn = page.locator('button:has-text("Renew now")')
             wait_and_click(page, renew_btn, max_attempts=8)
             capture_step(page, "步骤 8: 已点击 Renew now 按钮")
