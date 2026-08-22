@@ -176,14 +176,20 @@ def get_remaining_time(page):
     return clean_text if clean_text else "未知时间"
 
 
-def should_renew(time_str):
-    """判断剩余时间是否小于等于 2 天 (True 代表需要续期，False 代表不需要续期)"""
-    match = re.search(r"(\d+)\s*(?:d|day)", time_str, re.IGNORECASE)
-    if match:
-        days = int(match.group(1))
-        if days > 2:
-            return False  # 剩余天数 > 2 天，跳过续期
-    return True
+def parse_total_hours(time_str):
+    """将时间文本统一换算为总小时数"""
+    days = 0
+    hours = 0
+
+    d_match = re.search(r"(\d+)\s*(?:d|day)", time_str, re.IGNORECASE)
+    if d_match:
+        days = int(d_match.group(1))
+
+    h_match = re.search(r"(\d+)\s*(?:h|hour)", time_str, re.IGNORECASE)
+    if h_match:
+        hours = int(h_match.group(1))
+
+    return days * 24 + hours
 
 
 def run():
@@ -239,22 +245,23 @@ def run():
 
             print("7. 正在获取 Renew 操作前的时间并进行判断...")
             time_before = get_remaining_time(page)
-            print(f"-> 当前剩余续期时间: {time_before}")
-            capture_step(page, f"步骤 7: 已读取续期前时间 ({time_before})")
+            total_hours = parse_total_hours(time_before)
+            print(f"-> 当前剩余续期时间: {time_before} (折合 {total_hours} 小时)")
+            capture_step(page, f"步骤 7: 已读取续期前时间 ({time_before}, {total_hours}h)")
 
-            # 校验时间：如果剩余时间大于 2 天，终止操作直接退出
-            if not should_renew(time_before):
+            # 统一按小时判断：若大于 48 小时则无需续期直接退出
+            if total_hours > 36:
                 msg = (
                     f"ℹ️ **Freemchost 自动续期跳过**\n\n"
                     f"👤 **账号**: `{EMAIL}`\n"
-                    f"⏳ **当前剩余时间**: {time_before}\n"
-                    f"💡 **提示**: 剩余时间大于 2 天，无需续期，已自动退出任务。"
+                    f"⏳ **当前剩余时间**: {time_before} (约 {total_hours} 小时)\n"
+                    f"💡 **提示**: 剩余时间大于 48 小时，无需续期，已自动退出任务。"
                 )
                 print(f"-> {msg}")
                 send_telegram_message(msg, "step_temp.png")
                 return
 
-            print("8. 剩余时间小于等于 2 天，正在点击 Renew now 按钮...")
+            print("8. 剩余时间小于等于 48 小时，正在点击 Renew now 按钮...")
             renew_btn = page.locator('button:has-text("Renew now")')
             wait_and_click(page, renew_btn, max_attempts=8)
             capture_step(page, "步骤 8: 已点击 Renew now 按钮")
@@ -277,7 +284,8 @@ def run():
 
             print("11. 正在获取 Renew 操作后的时间...")
             time_after = get_remaining_time(page)
-            print(f"-> 续期后时间: {time_after}")
+            total_hours_after = parse_total_hours(time_after)
+            print(f"-> 续期后时间: {time_after} (折合 {total_hours_after} 小时)")
             capture_step(page, f"步骤 11: 续期结束，最新时间: {time_after}")
 
             page.screenshot(path=screenshot_path, full_page=True)
@@ -285,8 +293,8 @@ def run():
             report_msg = (
                 f"🎉 **Freemchost 自动续期任务全部成功**\n\n"
                 f"👤 **账号**: `{EMAIL}`\n"
-                f"⏳ **续期前剩余**: {time_before}\n"
-                f"⏳ **续期后剩余**: {time_after}\n"
+                f"⏳ **续期前剩余**: {time_before} ({total_hours}h)\n"
+                f"⏳ **续期后剩余**: {time_after} ({total_hours_after}h)\n"
                 f"⏰ **执行时间**: {time.strftime('%Y-%m-%d %H:%M:%S')}"
             )
             send_telegram_message(report_msg, screenshot_path)
