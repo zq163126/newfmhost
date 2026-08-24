@@ -48,7 +48,7 @@ def send_telegram_message(text, photo_path=None):
 
 
 def capture_step(page, step_name):
-    """辅助函数：仅打控制台日志，不再向 Telegram 推送中间过程图"""
+    """辅助函数：仅打控制台日志，不推送中间截图"""
     print(f"📍 [进度日志]: {step_name} | 当前 URL: {page.url}")
 
 
@@ -122,12 +122,17 @@ def parse_detail_response(res_json):
 
 
 def calculate_hours_left(expires_at_str):
-    """根据 ISO 格式的到期时间字符串计算剩余小时数"""
+    """根据 ISO 格式的到期时间字符串精准计算剩余小时数 (统一致化为 UTC 时区相减)"""
     if not expires_at_str:
         return 0
     try:
         clean_str = expires_at_str.replace("Z", "+00:00")
         expire_time = datetime.fromisoformat(clean_str)
+        
+        # 统一转化为带 UTC 时区的 datetime 统一运算
+        if expire_time.tzinfo is None:
+            expire_time = expire_time.replace(tzinfo=timezone.utc)
+            
         now_time = datetime.now(timezone.utc)
         time_diff = expire_time - now_time
         return max(0, int(time_diff.total_seconds() / 3600))
