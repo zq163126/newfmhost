@@ -47,16 +47,9 @@ def send_telegram_message(text, photo_path=None):
             print(f"发送 Telegram 截图失败: {e}")
 
 
-def capture_step(page, step_name, screenshot_path="step_temp.png"):
-    """辅助函数：打日志、截图并即时发送 Telegram 进度"""
-    print(f"📸 正在捕获过程截图: {step_name}")
-    try:
-        page.screenshot(path=screenshot_path, full_page=True)
-        send_telegram_message(
-            f"📍 **进度调试**: {step_name}\n🔗 当前 URL: `{page.url}`", screenshot_path
-        )
-    except Exception as e:
-        print(f"捕获或发送过程截图失败: {e}")
+def capture_step(page, step_name):
+    """辅助函数：仅打控制台日志，不再向 Telegram 推送中间过程图"""
+    print(f"📍 [进度日志]: {step_name} | 当前 URL: {page.url}")
 
 
 def wait_and_click(page, locator, max_attempts=10):
@@ -258,13 +251,11 @@ def run():
                 f"-> 服务器: {server_name} | 状态: {server_status} | 原始到期时间: {expires_at_before}"
             )
             print(f"-> 折算剩余约 {hours_left} 小时")
-            capture_step(
-                page,
-                f"步骤 6: 接口获取信息成功 (剩余 {hours_left} 小时)",
-            )
+            capture_step(page, f"步骤 6: 接口获取信息成功 (剩余 {hours_left} 小时)")
 
             # 判断是否符合续期标准
             if hours_left > 36:
+                page.screenshot(path=screenshot_path, full_page=True)
                 msg = (
                     f"ℹ️ **Freemchost 自动续期跳过**\n\n"
                     f"👤 **账号**: `{EMAIL}`\n"
@@ -273,7 +264,7 @@ def run():
                     f"💡 **提示**: 剩余时间大于 36 小时，无需续期，已自动退出任务。"
                 )
                 print(f"-> {msg}")
-                send_telegram_message(msg, "step_temp.png")
+                send_telegram_message(msg, screenshot_path)
                 return
 
             print("7. 剩余时间 <= 36 小时，向后端 POST 接口触发续期指令...")
