@@ -282,10 +282,20 @@ def run():
                 send_telegram_message(msg, "step_temp.png")
                 return
 
-            print("8. 剩余时间小于等于 36 小时，正在点击 Renew now 按钮...")
+            print("8. 剩余时间小于等于 36 小时，正在点击 Renew now 按钮（共点击 2 次，间隔 2 秒）...")
             renew_btn = page.locator('button:has-text("Renew now")')
+
+            # 第一次点击
+            print("-> 第一次点击 Renew now...")
             wait_and_click(page, renew_btn, max_attempts=8)
-            capture_step(page, "步骤 8: 已点击 Renew now 按钮")
+            page.wait_for_timeout(2000)
+
+            # 第二次点击
+            print("-> 第二次点击 Renew now...")
+            wait_and_click(page, renew_btn, max_attempts=8)
+            page.wait_for_timeout(2000)
+
+            capture_step(page, "步骤 8: 已完成 2 次 Renew now 按钮点击")
 
             print("9. 基于 Discord Boost 固定文本定位并点击续期确认按钮...")
             dismiss_ads(page)
