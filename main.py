@@ -60,8 +60,8 @@ def notify(title, content, photo_path=None):
             log(f"🔔 推送通知失败: {e}")
 
 def parse_action_response(res_json):
-    """解析【接口 A】返回的轻量级压缩包，同时提取最新到期时间、操作状态码"""
-    action_info = {"expires_at": None, "status_code": "未知"}
+    """解析【接口 A】返回的轻量级压缩包，提取最新到期时间及状态/错误提示"""
+    action_info = {"expires_at": None, "status_code": "未知", "error_msg": None}
     try:
         outer_p = res_json.get("p", {})
         keys = outer_p.get("k", [])
@@ -82,7 +82,18 @@ def parse_action_response(res_json):
         if "error" in keys:
             err_idx = keys.index("error")
             if err_idx < len(values):
-                action_info["status_code"] = values[err_idx].get("s", "未知")
+                err_val = values[err_idx]
+                if isinstance(err_val, dict):
+                    action_info["status_code"] = err_val.get("s", str(err_val))
+                    # 尝试提取具体的错误文本提示
+                    if "p" in err_val:
+                        e_keys = err_val["p"].get("k", [])
+                        e_vals = err_val["p"].get("v", [])
+                        if "message" in e_keys:
+                            m_idx = e_keys.index("message")
+                            action_info["error_msg"] = e_vals[m_idx].get("s")
+                else:
+                    action_info["status_code"] = str(err_val)
     except Exception as e:
         log(f"解析续期动作响应异常: {e}")
     return action_info
@@ -174,6 +185,10 @@ def run_auto_renew():
             server_page_url = f"https://freemchost.com/app/servers/{SERVER_ID}"
             page.goto(server_page_url, wait_until="networkidle")
 
+            # 增加 5 秒缓冲时间，模拟人类停顿，规避速率限制
+            log("⏳ 页面就绪，等待 5 秒以避开 API 冷却限制...")
+            time.sleep(5)
+
             base_headers = {
                 "accept": "application/x-tss-framed, application/x-ndjson, application/json",
                 "authorization": f"Bearer {token}",
@@ -198,7 +213,9 @@ def run_auto_renew():
                 expires_at = action_info["expires_at"]
                 
                 log("   📥 [接口A 返回快照] ----------------------------")
-                log(f"   动作执行状态码 (Error Code) : {action_info['status_code']} (注: 1通常代表无异常)")
+                log(f"   动作执行状态码: {action_info['status_code']}")
+                if action_info['error_msg']:
+                    log(f"   提示信息: {action_info['error_msg']}")
                 log(f"   捕获动作到期时间 (Expires At): {expires_at}")
                 log("   ------------------------------------------------")
             else:
@@ -208,9 +225,10 @@ def run_auto_renew():
                 sys.exit(1)
 
             if not expires_at:
-                log("⚠️ 接口 A 响应成功，但未能提取出新到期日期，流程中断。")
+                msg = action_info.get("error_msg") or "未触发续期或处于冷却期（Please take a moment before confirming the renewal）"
+                log(f"⚠️ 提示: {msg}")
                 page.screenshot(path=screenshot_path, full_page=True)
-                notify("服务器自动续期失败", "接口 A 响应成功，但未能提取出新到期日期，流程中断。", photo_path=screenshot_path)
+                notify("服务器自动续期未触发", f"后端返回提示：{msg}\n请稍后再试或检查服务器剩余时间是否已满。", photo_path=screenshot_path)
                 sys.exit(1)
 
             # 3. 发送【接口 B】请求：拉取续期后的最终详情状态
