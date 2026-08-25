@@ -46,8 +46,8 @@ def send_telegram_message(text, photo_path=None):
 
 
 def parse_action_response(res_json):
-    """【复用提供代码的续期解析逻辑】解析接口 A 返回包"""
-    action_info = {"expires_at": None, "status_code": "未知"}
+    """提取接口 A 返回的到期时间与详细错误消息"""
+    action_info = {"expires_at": None, "status_code": "未知", "error_msg": None}
     try:
         outer_p = res_json.get("p", {})
         keys = outer_p.get("k", [])
@@ -65,17 +65,30 @@ def parse_action_response(res_json):
                     if sub_idx < len(sub_values):
                         action_info["expires_at"] = sub_values[sub_idx].get("s")
         
+        # 解析后端抛出的类似 "Please take a moment before confirming..." 的错误
         if "error" in keys:
             err_idx = keys.index("error")
             if err_idx < len(values):
-                action_info["status_code"] = values[err_idx].get("s", "未知")
+                err_node = values[err_idx]
+                if isinstance(err_node, dict):
+                    err_node_p = err_node.get("p", {})
+                    err_keys = err_node_p.get("k", [])
+                    err_values = err_node_p.get("v", [])
+
+                    if "message" in err_keys:
+                        msg_idx = err_keys.index("message")
+                        if msg_idx < len(err_values):
+                            action_info["error_msg"] = err_values[msg_idx].get("s")
+                    action_info["status_code"] = err_node_p
+                else:
+                    action_info["status_code"] = str(err_node)
     except Exception as e:
         print(f"解析续期动作响应异常: {e}")
     return action_info
 
 
 def parse_detail_response(res_json):
-    """【复用提供代码的详情解析逻辑】解析接口 B 返回包"""
+    """解析接口 B 返回的数据"""
     info = {"name": "未知", "status": "未知"}
     try:
         outer_v = res_json.get("p", {}).get("v", [])
@@ -100,7 +113,7 @@ def parse_detail_response(res_json):
 
 
 def extract_auth_token_from_storage(page):
-    """【保留原有登录提取逻辑】从 LocalStorage 中读取 Token"""
+    """从 LocalStorage 中读取 Token"""
     token = page.evaluate("""
         () => {
             for (let i = 0; i < localStorage.length; i++) {
@@ -127,7 +140,6 @@ def run():
     screenshot_path = "result.png"
 
     with sync_playwright() as p:
-        # 使用我们的 Playwright 模拟浏览器登录环境
         browser = p.chromium.launch(headless=True)
         context = browser.new_context(viewport={"width": 1280, "height": 800})
         page = context.new_page()
@@ -147,17 +159,25 @@ def run():
                 raise RuntimeError("未能提取到有效的 Auth Access Token")
             print("✅ 成功提取 Token！")
 
+            # 🛠️【关键修复 1】：先通过 UI 加载服务器详情页，满足后端页面渲染上下文
+            server_page_url = f"https://freemchost.com/app/servers/{SERVER_ID}"
+            print(f"🌐 正在访问服务器详情页: {server_page_url}")
+            page.goto(server_page_url, wait_until="networkidle")
+
+            # 🛠️【关键修复 2】：强制等待 5 秒，破解 "Please take a moment..." 时间防刷限制
+            print("⏳ 正在进行 5 秒页面停留（绕过后端时间防刷机制）...")
+            time.sleep(5)
+
             base_headers = {
                 "accept": "application/x-tss-framed, application/x-ndjson, application/json",
                 "authorization": f"Bearer {access_token}",
                 "content-type": "application/json",
                 "origin": "https://freemchost.com",
-                "referer": f"https://freemchost.com/app/servers/{SERVER_ID}",
+                "referer": server_page_url,
                 "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
                 "x-tsr-serverfn": "true"
             }
 
-            # 【使用被替换的绝对准确续期 Payload】
             renew_payload = {
                 "t": {
                     "t": 10,
@@ -179,8 +199,8 @@ def run():
                 "m": []
             }
 
-            # 2. 发送【接口 A】请求：触发续期动作
-            print("2. ⚡ 步骤 1/2: 正在向后端发送续期指令 (接口 A)...")
+            # 发送【接口 A】请求
+            print("2. ⚡ 步骤 1/2: 向后端发送续期指令 (接口 A)...")
             action_res = page.request.post(RENEW_ACTION_URL, headers=base_headers, data=renew_payload)
 
             if action_res.status != 200:
@@ -188,17 +208,21 @@ def run():
 
             action_info = parse_action_response(action_res.json())
             expires_at = action_info.get("expires_at")
-            status_code = action_info.get("status_code")
+            error_msg = action_info.get("error_msg")
 
             print("   📥 [接口A 返回快照] ----------------------------")
-            print(f"   动作执行状态码 (Error Code) : {status_code}")
             print(f"   捕获动作到期时间 (Expires At): {expires_at}")
+            if error_msg:
+                print(f"   ⚠️ 后端拒绝提示: {error_msg}")
             print("   ------------------------------------------------")
+
+            if error_msg:
+                raise RuntimeError(f"接口 A 拒绝续期: {error_msg}")
 
             if not expires_at:
                 raise RuntimeError("⚠️ 接口 A 响应成功，但未能提取出新到期日期。")
 
-            # 3. 发送【接口 B】请求：拉取最终服务器完整状态
+            # 发送【接口 B】请求
             print("3. 🔍 步骤 2/2: 正在拉取最终服务器完整状态确认 (接口 B)...")
             detail_res = page.request.post(RENEW_DETAIL_URL, headers=base_headers, data=renew_payload)
             
