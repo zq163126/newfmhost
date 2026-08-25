@@ -94,29 +94,6 @@ def dismiss_ads(page):
         except Exception:
             pass
 
-    ad_selectors = [
-        "button:has(svg.lucide-x)",
-        'button:has-text("Close")',
-        'button:has(span:has-text("Close"))',
-        '//*[@id="dismiss-button"]',
-        'button[aria-label="Close"]',
-    ]
-
-    for frame in frames:
-        for selector in ad_selectors:
-            try:
-                elements = frame.locator(selector)
-                count = elements.count()
-                for i in range(count):
-                    el = elements.nth(i)
-                    if el.is_visible(timeout=200):
-                        try:
-                            el.click(force=True, timeout=500)
-                        except Exception:
-                            el.dispatch_event("click")
-            except Exception:
-                pass
-
 
 def wait_and_click(page, locator, max_attempts=10):
     """等待并强制点击元素"""
@@ -139,80 +116,91 @@ def click_renew_now_robust(page):
     """全方位穿透式点击 Renew now 按钮"""
     dismiss_ads(page)
     print("-> 正在强力触发 Renew now...")
-    
-    result = page.evaluate("""
+
+    page.evaluate("""
         () => {
             const buttons = Array.from(document.querySelectorAll('button'));
             const targetBtn = buttons.find(b => b.textContent && b.textContent.includes('Renew now'));
 
-            if (!targetBtn) return { success: false, reason: 'No Renew now button found' };
+            if (!targetBtn) return;
 
             targetBtn.removeAttribute('disabled');
             targetBtn.style.pointerEvents = 'auto';
 
-            const mouseEvents = ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'];
-            mouseEvents.forEach(eventType => {
-                const event = new MouseEvent(eventType, {
+            ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(eventType => {
+                targetBtn.dispatchEvent(new MouseEvent(eventType, {
                     bubbles: true,
                     cancelable: true,
                     view: window
-                });
-                targetBtn.dispatchEvent(event);
+                }));
             });
 
             if (typeof targetBtn.click === 'function') {
                 targetBtn.click();
             }
-
-            return { success: true };
         }
     """)
-    print(f"-> Renew now 点击结果: {result}")
 
 
 def click_discord_confirm_robust(page):
-    """固定坐标点击版：直接点击指定坐标，并在截图上标记红点以便人工微调"""
+    """固定坐标点击版：通过网页注入 DOM 绘制红点（零依赖，适用于 GitHub Actions）"""
     dismiss_ads(page)
     print("-> 正在执行固定坐标点击 Discord 续期按钮...")
 
-    # 1. 显式等待弹窗完全展开并稳定
+    # 1. 等待弹窗完全展开
     dialog = page.locator('div[role="dialog"]').first
     try:
         dialog.wait_for(state="visible", timeout=5000)
-        page.wait_for_timeout(800)  # 等待动画结束，确保弹窗静止
+        page.wait_for_timeout(800)  # 等待弹出动画结束，确保窗口静止
         print("-> 确认弹窗已完全展开")
     except Exception:
         print("-> 未检测到标准的 dialog 弹窗，继续执行坐标点击...")
 
     # ==========================================
-    # 📌 在这里调整你的固定坐标 (当前设定为屏幕正中偏下)
+    # 📌 可在此处修改测试坐标（分辨率 1280x800）
     # ==========================================
     target_x = 640
     target_y = 520
 
-    print(f"-> 正在点击固定坐标: X={target_x}, Y={target_y}")
+    print(f"-> 正在标记并点击固定坐标: X={target_x}, Y={target_y}")
 
     try:
-        # 2. 在截图上画一个红点标记当前点击位置，并发送到 Telegram 供你观察位置是否准确
+        # 2. 通过网页 DOM 注入一个红色圆点
+        page.evaluate(f"""
+            () => {{
+                const existing = document.getElementById('debug-click-dot');
+                if (existing) existing.remove();
+
+                const dot = document.createElement('div');
+                dot.id = 'debug-click-dot';
+                dot.style.position = 'fixed';
+                dot.style.left = '{target_x}px';
+                dot.style.top = '{target_y}px';
+                dot.style.width = '24px';
+                dot.style.height = '24px';
+                dot.style.backgroundColor = '#ff0000';
+                dot.style.border = '3px solid #ffffff';
+                dot.style.borderRadius = '50%';
+                dot.style.transform = 'translate(-50%, -50%)';
+                dot.style.zIndex = '9999999';
+                dot.style.pointerEvents = 'none';
+                dot.style.boxShadow = '0 0 10px rgba(0,0,0,0.8)';
+                document.body.appendChild(dot);
+            }}
+        """)
+
+        # 3. 截图发送到 Telegram 观察红点位置
         debug_screenshot_path = "click_debug.png"
         page.screenshot(path=debug_screenshot_path, full_page=True)
-        
-        try:
-            from PIL import Image, ImageDraw
-            img = Image.open(debug_screenshot_path)
-            draw = ImageDraw.Draw(img)
-            # 以点击坐标为中心画一个半径为 8 像素的亮红色圆点
-            r = 8
-            draw.ellipse([target_x - r, target_y - r, target_x + r, target_y + r], fill="red", outline="white", width=2)
-            img.save(debug_screenshot_path)
-            send_telegram_message(f"📍 **坐标调试红点**: 当前测试点击位置 `({target_x}, {target_y})`", debug_screenshot_path)
-        except Exception as img_err:
-            print(f"绘制调试红点失败（不影响点击）：{img_err}")
+        send_telegram_message(
+            f"📍 **坐标调试标记**: 当前点击坐标 `({target_x}, {target_y})`\n请观察红点位置是否精准落在 Discord 按钮上！",
+            debug_screenshot_path,
+        )
 
-        # 3. 执行物理鼠标点击
+        # 4. 执行物理鼠标点击
         page.mouse.click(target_x, target_y)
         print("-> 固定坐标点击动作已执行")
-        
+
     except Exception as e:
         raise RuntimeError(f"固定坐标点击执行失败: {e}")
 
@@ -346,9 +334,8 @@ def run():
 
             capture_step(page, "步骤 8: 已完成 Renew now 按钮点击")
 
-            print("9. 正在尝试检测并点击弹窗内的 Discord 续期按钮...")
+            print("9. 正在执行固定坐标点击 Discord 续期确认按钮...")
             click_discord_confirm_robust(page)
-            capture_step(page, "步骤 9: 检查完毕")
 
             print("10. 等待数据更新...")
             page.wait_for_timeout(5000)
