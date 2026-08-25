@@ -171,9 +171,9 @@ def click_renew_now_robust(page):
 
 
 def click_discord_confirm_robust(page):
-    """精准定位弹窗内部的 Discord Boosted renewal 按钮并点击"""
+    """精准定位弹窗内部的 Discord 续期按钮（仅匹配 Discord 关键字，不依赖具体小时数）"""
     dismiss_ads(page)
-    print("-> 正在弹窗内部寻找 Discord Boosted renewal 按钮...")
+    print("-> 正在弹窗内部寻找 Discord 续期按钮...")
 
     # 1. 优先等待弹窗（dialog）出现
     dialog = page.locator('div[role="dialog"]').first
@@ -183,7 +183,7 @@ def click_discord_confirm_robust(page):
     except Exception:
         print("-> 未检测到标准的 dialog 弹窗，尝试全局搜索...")
 
-    # 2. 在弹窗内部寻找包含 'Discord Boosted renewal' 或 '60 hours' 的按钮并点击
+    # 2. 在弹窗内部寻找包含 'Discord' 的按钮并点击
     success = page.evaluate("""
         () => {
             const dialog = document.querySelector('div[role="dialog"]') || document;
@@ -192,10 +192,10 @@ def click_discord_confirm_robust(page):
             const allTexts = buttons.map(b => b.textContent.replace(/\\s+/g, ' ').trim());
             console.log("弹窗内找到的所有按钮文本:", allTexts);
 
-            // 寻找包含 Discord Boosted renewal 或 60 hours 的目标按钮
+            // 核心修改：只通过 Discord 关键字进行匹配，不管具体是多少小时
             const targetBtn = buttons.find(b => {
                 const text = b.textContent.replace(/\\s+/g, ' ').trim();
-                return text.includes('Discord Boosted renewal') || text.includes('60 hours') || text.includes('Discord');
+                return text.includes('Discord');
             });
 
             if (!targetBtn) {
@@ -228,7 +228,7 @@ def click_discord_confirm_robust(page):
     # 如果 JS 未直接命中，尝试使用 Playwright 强行定位
     print("-> JS 未直接命中，尝试使用 Playwright 文本强行定位点击...")
     try:
-        target_locator = page.locator('div[role="dialog"] button').filter(has_text=re.compile("Discord Boosted renewal|60 hours|Discord", re.IGNORECASE)).first
+        target_locator = page.locator('div[role="dialog"] button').filter(has_text=re.compile("Discord", re.IGNORECASE)).first
         target_locator.wait_for(state="visible", timeout=3000)
         target_locator.click(force=True)
         print("-> 通过 Playwright 文本过滤器成功点击")
