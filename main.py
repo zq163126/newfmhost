@@ -11,13 +11,13 @@ from playwright.sync_api import sync_playwright
 EMAIL = os.getenv("WEB_EMAIL")
 PASSWORD = os.getenv("WEB_PASSWORD")
 
-# 2. 路由配置 (2026-06-05 最新双接口链路)
+# 2. 路由配置 (更新为你的专属接口路由)
 # 【接口 A】触发续期的 Action 路由
 RENEW_ACTION_URL = "https://freemchost.com/_serverFn/798181797bd95a02dee916a26c18d3539a58152db8660e097ca48d7cdd8ee50c"
 # 【接口 B】获取最终完整状态的 Detail 路由
 RENEW_DETAIL_URL = "https://freemchost.com/_serverFn/c3a45c08362f2f613bbb6d511a3733a9e85e561709d48bec9280e82a4aa4f47d"
 
-SERVER_ID = "c1487010-5680-43b7-932b-f6b6de2d893c"
+SERVER_ID = "2f12a6bd-a1c1-4cc1-bd32-8becf1925680"
 
 # 3. 消息推送配置（从 GitHub Secrets 读取）
 TG_BOT_TOKEN = os.getenv("TG_BOT_TOKEN")
