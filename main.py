@@ -169,17 +169,14 @@ def click_renew_now_robust(page):
 
     js_click_all = """
     () => {
-        // 寻找匹配文本的 button 或其子节点
         const buttons = Array.from(document.querySelectorAll('button'));
         const targetBtn = buttons.find(b => b.textContent.includes('Renew now'));
 
         if (!targetBtn) return false;
 
-        // 移除可能的禁用状态
         targetBtn.removeAttribute('disabled');
         targetBtn.style.pointerEvents = 'auto';
 
-        // 模拟全套原生点击事件链
         const mouseEvents = ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'];
         mouseEvents.forEach(eventType => {
             const event = new MouseEvent(eventType, {
@@ -190,7 +187,6 @@ def click_renew_now_robust(page):
             targetBtn.dispatchEvent(event);
         });
 
-        // 额外尝试直接触发 Element.click()
         if (typeof targetBtn.click === 'function') {
             targetBtn.click();
         }
@@ -199,18 +195,69 @@ def click_renew_now_robust(page):
     }
     """
 
-    # 优先执行 JS 全套鼠标事件绑定模拟
     success = page.evaluate(js_click_all)
     if success:
         print("-> 已成功通过原生事件冒泡模拟击中 Renew now 按钮")
         return
 
-    # 备用：Playwright 定位器结合 force=True 点击
     print("-> 未能在 DOM 中一次性派发事件，尝试强行聚焦后点击...")
     btn_locator = page.locator('button:has-text("Renew now")').first
     btn_locator.wait_for(state="attached", timeout=10000)
     btn_locator.scroll_into_view_if_needed()
     btn_locator.click(force=True)
+
+
+def click_discord_confirm_robust(page):
+    """强力寻找并点击 Discord 续期选项按钮"""
+    dismiss_ads(page)
+    target_text = "Discord Boosted renewal"
+
+    print("-> 等待 Discord Boost 确认区域加载...")
+    try:
+        # 1. 优先使用模糊 Locator 匹配包含 Discord Boosted 的区域
+        section = page.locator(f'div:has-text("{target_text}")').last
+        section.wait_for(state="attached", timeout=8000)
+
+        option_btn = section.locator("button").first
+        if option_btn.count() > 0 and option_btn.is_visible():
+            human_mouse_click(page, option_btn)
+            print("-> 方式 1: 成功使用常规/轨迹模拟点击 Discord 确认按钮")
+            return
+    except Exception as e:
+        print(f"-> 方式 1 匹配未成功 ({e})，启动 JS 强力扫描匹配...")
+
+    # 2. 备用方式：通过原生 JS 扫描 DOM 查找目标节点并触发全套点击事件
+    js_click_discord = """
+    () => {
+        const divs = Array.from(document.querySelectorAll('div, section, card'));
+        const targetDiv = divs.reverse().find(d => d.textContent && d.textContent.includes('Discord Boosted renewal'));
+
+        if (!targetDiv) return false;
+
+        const btn = targetDiv.querySelector('button') || targetDiv.closest('button');
+        if (!btn) return false;
+
+        btn.removeAttribute('disabled');
+        btn.style.pointerEvents = 'auto';
+
+        const mouseEvents = ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'];
+        mouseEvents.forEach(eventType => {
+            btn.dispatchEvent(new MouseEvent(eventType, { bubbles: true, cancelable: true, view: window }));
+        });
+
+        if (typeof btn.click === 'function') {
+            btn.click();
+        }
+
+        return true;
+    }
+    """
+
+    success = page.evaluate(js_click_discord)
+    if success:
+        print("-> 方式 2: 已通过 JS 成功定位并派发全套点击事件至 Discord 确认按钮")
+    else:
+        raise RuntimeError("在 DOM 中未能查找到 Discord Boost 续期确认按钮。")
 
 
 def get_remaining_time(page):
@@ -330,22 +377,13 @@ def run():
 
             print("8. 剩余时间小于等于 36 小时，正在执行 Renew now 全套事件派发点击...")
             click_renew_now_robust(page)
-            page.wait_for_timeout(2000)
+            page.wait_for_timeout(3000)
 
-            capture_step(page, "步骤 8: 已完成 Renew now 按钮点击")
+            capture_step(page, "步骤 8: 已完成 Renew now 按钮点击，等待确认界面")
 
-            print("9. 基于 Discord Boost 固定文本定位并点击续期确认按钮...")
-            dismiss_ads(page)
-
-            discord_section = page.locator(
-                'div:has-text("Discord Boosted renewal — your linked Discord account gives you extra free time.")'
-            ).last
-            option_btn = discord_section.locator("button").first
-
-            human_mouse_click(page, option_btn)
-            capture_step(
-                page, "步骤 9: 已点击基于 Discord Boost 锚点定位的续期按钮"
-            )
+            print("9. 正在尝试定位并点击 Discord 续期确认按钮...")
+            click_discord_confirm_robust(page)
+            capture_step(page, "步骤 9: 已点击 Discord Boost 续期确认按钮")
 
             print("10. 等待数据更新...")
             page.wait_for_timeout(5000)
