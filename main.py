@@ -215,56 +215,55 @@ def click_discord_confirm_robust(page):
 
     print(f"-> 正在诊断并寻找页面中包含 '{target_text}' 的元素...")
 
-    # 先用 JS 在控制台打印出匹配该文字的所有元素的标签名和外层 HTML，方便我们在日志里看清它的真实结构
-    debug_info = page.evaluate("""
+    # 先用 JS 在控制台打印出匹配该文字的所有元素的标签名和外层 HTML
+    debug_info = page.evaluate(
+        """
         (targetText) => {
             const allElements = Array.from(document.querySelectorAll('*'));
-            // 找出直接包含该文本的最内层或相关元素
             const matched = allElements.filter(el => el.textContent && el.textContent.includes(targetText) && el.children.length < 5);
             return matched.map(el => ({
                 tag: el.tagName,
-                outerHTML: el.outerHTML.substring(0, 300) // 截取前300字符避免过长
+                outerHTML: el.outerHTML.substring(0, 300)
             }));
         }
-    """, target_text)
-    
+    """,
+        target_text,
+    )
+
     print(f"-> 诊断结果：找到 {len(debug_info)} 个相关节点。详情预览：")
-    for idx, info in enumerate(debug_info[:3]): # 仅打印前3个避免刷屏
+    for idx, info in enumerate(debug_info[:3]):
         print(f"  [{idx+1}] 标签: <{info['tag']}> -> {info['outerHTML']}...")
 
     try:
-        # 1. 扩大搜索范围：不局限于 <button>，把常见的可点击容器（div, a, button, [role="button"]）全部纳入
-        broad_locator = page.locator(f'button:has-text("{target_text}"), [role="button"]:has-text("{target_text}"), div.cursor-pointer:has-text("{target_text}"), div:has-text("{target_text}")').last
-        
+        broad_locator = page.locator(
+            f'button:has-text("{target_text}"), [role="button"]:has-text("{target_text}"), div.cursor-pointer:has-text("{target_text}"), div:has-text("{target_text}")'
+        ).last
+
         broad_locator.wait_for(state="visible", timeout=8000)
         broad_locator.scroll_into_view_if_needed()
         page.wait_for_timeout(300)
 
-        # 尝试点击
         broad_locator.click(force=True, timeout=3000)
         print("-> 成功通过广谱定位点击了 Discord 续期目标")
         return
 
     except Exception as e:
-        print(f"-> 常规广谱定位受阻 ({e)，启动终极无差别 JS 暴力点击...")
+        print(f"-> 常规广谱定位受阻 ({e})，启动终极无差别 JS 暴力点击...")
 
-        # 2. 终极暴力 JS：只要有任何元素包含这串字，直接对它以及它的父级触发点击
-        success = page.evaluate("""
+        success = page.evaluate(
+            """
             (targetText) => {
                 const allElements = Array.from(document.querySelectorAll('*'));
-                // 找到文本完全匹配的底层节点
                 const targetNode = allElements.find(el => el.children.length === 0 && el.textContent && el.textContent.includes(targetText));
                 
                 if (!targetNode) return false;
                 
-                // 向上寻找最近的可点击容器（向上找3层以内）
                 let clickable = targetNode.closest('button') || targetNode.closest('[role="button"]') || targetNode.closest('.cursor-pointer') || targetNode.parentElement;
                 
                 if (!clickable) clickable = targetNode;
                 
                 clickable.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 
-                // 派发全套鼠标事件
                 ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(eventType => {
                     clickable.dispatchEvent(new MouseEvent(eventType, {
                         bubbles: true,
@@ -278,10 +277,14 @@ def click_discord_confirm_robust(page):
                 }
                 return true;
             }
-        """, target_text)
+        """,
+            target_text,
+        )
 
         if not success:
-            raise RuntimeError(f"页面上彻底未找到包含 '{target_text}' 的文字节点。")
+            raise RuntimeError(
+                f"页面上彻底未找到包含 '{target_text}' 的文字节点。"
+            )
         print("-> 已通过终极无差别 JS 成功触发点击")
 
 
@@ -323,11 +326,9 @@ def run():
     screenshot_path = "result.png"
 
     with sync_playwright() as p:
-        # 配置浏览器启动参数
         launch_args = ["--no-sandbox", "--disable-setuid-sandbox"]
         browser = p.chromium.launch(headless=True, args=launch_args)
 
-        # 动态绑定代理配置
         context_args = {"viewport": {"width": 1280, "height": 800}}
         if PROXY_SOCKS5:
             print(f"-> 成功绑定代理通道: {PROXY_SOCKS5}")
@@ -399,7 +400,6 @@ def run():
                 f"步骤 7: 已读取续期前时间 ({time_before}, {total_hours}h)",
             )
 
-            # 按小时判断：若大于 36 小时则无需续期直接退出
             if total_hours > 36:
                 msg = (
                     f"ℹ️ **Freemchost 自动续期跳过**\n\n"
