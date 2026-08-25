@@ -206,7 +206,8 @@ def run():
                 "x-tsr-serverfn": "true",
             }
 
-            renew_payload = {
+            # 详情查询接口 Payload
+            detail_payload = {
                 "t": {
                     "t": 10,
                     "i": 0,
@@ -229,9 +230,36 @@ def run():
                 "m": [],
             }
 
+            # 续期动作接口 Payload (附带 action 指令结构)
+            action_payload = {
+                "t": {
+                    "t": 10,
+                    "i": 0,
+                    "p": {
+                        "k": ["data"],
+                        "v": [
+                            {
+                                "t": 10,
+                                "i": 1,
+                                "p": {
+                                    "k": ["id", "action"],
+                                    "v": [
+                                        {"t": 1, "s": SERVER_ID},
+                                        {"t": 1, "s": "renew"}
+                                    ],
+                                },
+                                "o": 0,
+                            }
+                        ],
+                    },
+                },
+                "f": 63,
+                "m": [],
+            }
+
             print("6. 正在通过 POST 接口拉取服务器初始详情...")
             detail_res = page.request.post(
-                RENEW_DETAIL_URL, headers=base_headers, data=renew_payload
+                RENEW_DETAIL_URL, headers=base_headers, data=detail_payload
             )
 
             if detail_res.status != 200:
@@ -267,9 +295,8 @@ def run():
 
             print("7. 剩余时间 <= 35 小时，向后端 POST 接口触发续期指令...")
 
-            # 静默 POST 重试逻辑（带有梯度时间间隔，避开防刷拦截）
             action_info = {}
-            delays = [0, 8, 15]
+            delays = [0, 6, 12]
 
             for attempt, delay in enumerate(delays, start=1):
                 if delay > 0:
@@ -277,7 +304,7 @@ def run():
                     time.sleep(delay)
 
                 action_res = page.request.post(
-                    RENEW_ACTION_URL, headers=base_headers, data=renew_payload
+                    RENEW_ACTION_URL, headers=base_headers, data=action_payload
                 )
 
                 if action_res.status != 200:
@@ -288,8 +315,11 @@ def run():
                 action_info = parse_action_response(action_res.json())
                 if action_info.get("error_msg"):
                     print(f"-> 接口反馈: {action_info['error_msg']}")
+                elif action_info.get("expires_at"):
+                    print(f"-> 续期指令成功！接口直接返回了新到期时间: {action_info['expires_at']}")
+                    break
                 else:
-                    print("-> 续期指令 POST 成功！")
+                    print("-> 续期 POST 指令响应成功！")
                     break
 
             if action_info.get("error_msg"):
@@ -298,10 +328,10 @@ def run():
                 )
 
             print("8. 正在拉取最新的服务器完整数据（确认续期结果）...")
-            time.sleep(3)
+            time.sleep(4)
 
             detail_res_after = page.request.post(
-                RENEW_DETAIL_URL, headers=base_headers, data=renew_payload
+                RENEW_DETAIL_URL, headers=base_headers, data=detail_payload
             )
             final_info = parse_detail_response(detail_res_after.json())
 
