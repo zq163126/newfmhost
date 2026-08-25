@@ -46,7 +46,7 @@ def send_telegram_message(text, photo_path=None):
 
 
 def parse_action_response(res_json):
-    """提取接口 A 返回的到期时间与详细错误消息"""
+    """提取接口 A 返回的到期时间与错误消息"""
     action_info = {"expires_at": None, "status_code": "未知", "error_msg": None}
     try:
         outer_p = res_json.get("p", {})
@@ -65,7 +65,6 @@ def parse_action_response(res_json):
                     if sub_idx < len(sub_values):
                         action_info["expires_at"] = sub_values[sub_idx].get("s")
         
-        # 解析后端抛出的类似 "Please take a moment before confirming..." 的错误
         if "error" in keys:
             err_idx = keys.index("error")
             if err_idx < len(values):
@@ -88,7 +87,7 @@ def parse_action_response(res_json):
 
 
 def parse_detail_response(res_json):
-    """解析接口 B 返回的数据"""
+    """解析接口 B 返回的服务器数据"""
     info = {"name": "未知", "status": "未知"}
     try:
         outer_v = res_json.get("p", {}).get("v", [])
@@ -113,7 +112,7 @@ def parse_detail_response(res_json):
 
 
 def extract_auth_token_from_storage(page):
-    """从 LocalStorage 中读取 Token"""
+    """从 LocalStorage 中精准提取 Access Token"""
     token = page.evaluate("""
         () => {
             for (let i = 0; i < localStorage.length; i++) {
@@ -159,16 +158,16 @@ def run():
                 raise RuntimeError("未能提取到有效的 Auth Access Token")
             print("✅ 成功提取 Token！")
 
-            # 🛠️【关键修复 1】：先通过 UI 加载服务器详情页，满足后端页面渲染上下文
+            # 严格对齐 URL 与页面上下文
             server_page_url = f"https://freemchost.com/app/servers/{SERVER_ID}"
-            print(f"🌐 正在访问服务器详情页: {server_page_url}")
+            print(f"🌐 正在加载服务器上下文页面: {server_page_url}")
             page.goto(server_page_url, wait_until="networkidle")
 
-            # 🛠️【关键修复 2】：强制等待 5 秒，破解 "Please take a moment..." 时间防刷限制
-            print("⏳ 正在进行 5 秒页面停留（绕过后端时间防刷机制）...")
-            time.sleep(5)
+            # 预留必要的 XHR/后端上下文建立时间
+            time.sleep(3)
 
-            base_headers = {
+            # 精准构造 Headers
+            headers = {
                 "accept": "application/x-tss-framed, application/x-ndjson, application/json",
                 "authorization": f"Bearer {access_token}",
                 "content-type": "application/json",
@@ -199,9 +198,9 @@ def run():
                 "m": []
             }
 
-            # 发送【接口 A】请求
-            print("2. ⚡ 步骤 1/2: 向后端发送续期指令 (接口 A)...")
-            action_res = page.request.post(RENEW_ACTION_URL, headers=base_headers, data=renew_payload)
+            # 2. 发送 POST 续期指令 (接口 A)
+            print("2. ⚡ 步骤 1/2: 正在向后端发送续期指令 (接口 A)...")
+            action_res = page.request.post(RENEW_ACTION_URL, headers=headers, data=renew_payload)
 
             if action_res.status != 200:
                 raise RuntimeError(f"续期 Action 接口请求失败，HTTP 状态码: {action_res.status}")
@@ -211,20 +210,19 @@ def run():
             error_msg = action_info.get("error_msg")
 
             print("   📥 [接口A 返回快照] ----------------------------")
+            print(f"   动作执行状态码 (Error Code) : {action_info.get('status_code')}")
             print(f"   捕获动作到期时间 (Expires At): {expires_at}")
-            if error_msg:
-                print(f"   ⚠️ 后端拒绝提示: {error_msg}")
             print("   ------------------------------------------------")
 
             if error_msg:
-                raise RuntimeError(f"接口 A 拒绝续期: {error_msg}")
+                raise RuntimeError(f"接口 A 响应中包含业务错误: {error_msg}")
 
             if not expires_at:
                 raise RuntimeError("⚠️ 接口 A 响应成功，但未能提取出新到期日期。")
 
-            # 发送【接口 B】请求
+            # 3. 发送 POST 查询最终状态 (接口 B)
             print("3. 🔍 步骤 2/2: 正在拉取最终服务器完整状态确认 (接口 B)...")
-            detail_res = page.request.post(RENEW_DETAIL_URL, headers=base_headers, data=renew_payload)
+            detail_res = page.request.post(RENEW_DETAIL_URL, headers=headers, data=renew_payload)
             
             server_name = "未知"
             server_status = "未知"
