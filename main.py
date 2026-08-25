@@ -171,21 +171,21 @@ def click_renew_now_robust(page):
 
 
 def click_discord_confirm_robust(page):
-    """终极稳健版：等待弹窗动画结束，不滚动视口，直接精准点击"""
+    """终极坐标点击版：通过 JS 寻找 Discord 按钮并获取精确坐标，直接进行物理鼠标点击"""
     dismiss_ads(page)
-    print("-> 正在弹窗内部寻找 Discord 续期按钮...")
+    print("-> 正在弹窗内部寻找 Discord 续期按钮的坐标...")
 
-    # 1. 显式等待弹窗完全出现，并额外等待 500ms 让开启动画（animate-in）播完、DOM 彻底稳定
+    # 1. 显式等待弹窗完全出现并稳定
     dialog = page.locator('div[role="dialog"]').first
     try:
         dialog.wait_for(state="visible", timeout=5000)
-        page.wait_for_timeout(600)  # 关键：等待动画完全结束，避免 element is not stable
+        page.wait_for_timeout(600)  # 等待动画结束
         print("-> 确认弹窗已完全展开且稳定")
     except Exception:
         print("-> 警告：未检测到标准 dialog 弹窗，继续尝试...")
 
-    # 2. 纯 JS 暴力点击：不进行任何 scroll_into_view，直接在现有的 DOM 中触发
-    success = page.evaluate("""
+    # 2. 通过 JS 查找按钮并获取其在视口中的中心坐标
+    coord_result = page.evaluate("""
         () => {
             const dialog = document.querySelector('div[role="dialog"]') || document;
             const buttons = Array.from(dialog.querySelectorAll('button'));
@@ -197,45 +197,34 @@ def click_discord_confirm_robust(page):
             });
 
             if (!targetBtn) {
-                return { success: false, reason: 'Button with Discord not found' };
+                return { success: false };
             }
 
-            // 移除可能阻碍点击的属性
-            targetBtn.removeAttribute('disabled');
-            targetBtn.style.pointerEvents = 'auto';
-
-            // 派发全套鼠标与点击事件
-            ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(eventType => {
-                targetBtn.dispatchEvent(new MouseEvent(eventType, {
-                    bubbles: true,
-                    cancelable: true,
-                    view: window,
-                    clientX: targetBtn.getBoundingClientRect().x + 10,
-                    clientY: targetBtn.getBoundingClientRect().y + 10
-                }));
-            });
-
-            if (typeof targetBtn.click === 'function') {
-                targetBtn.click();
-            }
-
-            return { success: true, text: targetBtn.textContent.replace(/\\s+/g, ' ').trim() };
+            // 获取元素在视口中的绝对位置
+            const rect = targetBtn.getBoundingClientRect();
+            return {
+                success: true,
+                x: rect.x + rect.width / 2,
+                y: rect.y + rect.height / 2,
+                text: targetBtn.textContent.replace(/\\s+/g, ' ').trim()
+            };
         }
     """)
 
-    if isinstance(success, dict) and success.get("success"):
-        print(f"-> 成功通过纯 JS 点击 Discord 确认按钮: [{success.get('text')}]")
-        return
+    if not isinstance(coord_result, dict) or not coord_result.get("success"):
+        raise RuntimeError("未能通过 JS 找到包含 Discord 的按钮坐标。")
 
-    # 3. 如果 JS 未命中，使用 Playwright 的点击（千万不要加 scroll_into_view_if_needed）
-    print("-> JS 未命中，尝试使用 Playwright 直接点击...")
+    x = coord_result.get("x")
+    y = coord_result.get("y")
+    btn_text = coord_result.get("text")
+    print(f"-> 成功定位 Discord 按钮坐标: X={x:.1f}, Y={y:.1f}，文本内容: [{btn_text[:30]}...]")
+
+    # 3. 使用 Playwright 模拟真实鼠标在计算出的坐标处点击
     try:
-        target_btn = page.locator('div[role="dialog"] button').filter(has_text="Discord").first
-        target_btn.click(force=True, timeout=3000)
-        print("-> Playwright 直接点击成功")
-        return
+        page.mouse.click(x, y)
+        print("-> 成功通过鼠标绝对坐标物理点击该按钮")
     except Exception as e:
-        raise RuntimeError(f"点击 Discord 续期确认按钮彻底失败: {e}")
+        raise RuntimeError(f"坐标点击执行失败: {e}")
 
 
 def get_remaining_time(page):
