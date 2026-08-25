@@ -48,26 +48,13 @@ def send_telegram_message(text, photo_path=None):
 
 
 def capture_step(page, step_name):
-    """辅助函数：仅打控制台日志，不推送中间截图"""
+    """辅助函数：仅打控制台日志"""
     print(f"📍 [进度日志]: {step_name} | 当前 URL: {page.url}")
 
 
-def wait_and_click(page, locator, max_attempts=10):
-    """等待并强制点击元素"""
-    for attempt in range(max_attempts):
-        try:
-            locator.first.click(force=True, timeout=1500)
-            print(f"-> 成功点击目标元素（第 {attempt + 1} 次尝试）")
-            return True
-        except Exception:
-            page.wait_for_timeout(1000)
-
-    raise RuntimeError(f"未能成功点击目标元素 ({locator})，当前页面 URL: {page.url}")
-
-
 def parse_action_response(res_json):
-    """解析【接口 A】返回的数据结构，提取最新到期时间、操作状态码"""
-    action_info = {"expires_at": None, "status_code": "未知"}
+    """解析【接口 A】返回的数据结构，提取最新到期时间、操作状态码或错误提示"""
+    action_info = {"expires_at": None, "status_code": "未知", "error_msg": None}
     try:
         outer_p = res_json.get("p", {})
         keys = outer_p.get("k", [])
@@ -88,7 +75,16 @@ def parse_action_response(res_json):
         if "error" in keys:
             err_idx = keys.index("error")
             if err_idx < len(values):
-                action_info["status_code"] = values[err_idx].get("s", "未知")
+                err_node_p = values[err_idx].get("p", {})
+                err_keys = err_node_p.get("k", [])
+                err_values = err_node_p.get("v", [])
+
+                if "message" in err_keys:
+                    msg_idx = err_keys.index("message")
+                    if msg_idx < len(err_values):
+                        action_info["error_msg"] = err_values[msg_idx].get("s")
+                else:
+                    action_info["status_code"] = values[err_idx].get("s", "未知")
     except Exception as e:
         print(f"解析续期动作响应异常: {e}")
     return action_info
@@ -122,17 +118,16 @@ def parse_detail_response(res_json):
 
 
 def calculate_hours_left(expires_at_str):
-    """根据 ISO 格式的到期时间字符串精准计算剩余小时数 (统一致化为 UTC 时区相减)"""
+    """根据 ISO 格式的到期时间字符串精准计算剩余小时数"""
     if not expires_at_str:
         return 0
     try:
         clean_str = expires_at_str.replace("Z", "+00:00")
         expire_time = datetime.fromisoformat(clean_str)
-        
-        # 统一转化为带 UTC 时区的 datetime 统一运算
+
         if expire_time.tzinfo is None:
             expire_time = expire_time.replace(tzinfo=timezone.utc)
-            
+
         now_time = datetime.now(timezone.utc)
         time_diff = expire_time - now_time
         return max(0, int(time_diff.total_seconds() / 3600))
@@ -183,9 +178,8 @@ def run():
             page.locator("#email").fill(EMAIL)
             page.locator("#password").fill(PASSWORD)
 
-            print("3. 点击 Sign in...")
-            signin_btn = page.locator('button[type="submit"]:has-text("Sign in")')
-            wait_and_click(page, signin_btn)
+            print("3. 提交登录...")
+            page.locator('button[type="submit"]:has-text("Sign in")').click(force=True)
 
             print("4. 正在验证登录状态（等待页面跳转至后台）...")
             try:
@@ -202,7 +196,6 @@ def run():
                 raise RuntimeError("未能提取到有效的 Auth Access Token")
             print("✅ 成功提取 Token！")
 
-            # 构建 POST 请求公共头
             base_headers = {
                 "accept": "application/x-tss-framed, application/x-ndjson, application/json",
                 "authorization": f"Bearer {access_token}",
@@ -258,35 +251,54 @@ def run():
             print(f"-> 折算剩余约 {hours_left} 小时")
             capture_step(page, f"步骤 6: 接口获取信息成功 (剩余 {hours_left} 小时)")
 
-            # 判断是否符合续期标准
-            if hours_left > 36:
+            # 判断是否符合续期标准 (<= 35 小时才触发续期)
+            if hours_left > 35:
                 page.screenshot(path=screenshot_path, full_page=True)
                 msg = (
                     f"ℹ️ **Freemchost 自动续期跳过**\n\n"
                     f"👤 **账号**: `{EMAIL}`\n"
                     f"🖥️ **服务器**: `{server_name}`\n"
                     f"⏳ **到期时间**: `{expires_at_before}` (剩余约 {hours_left} 小时)\n"
-                    f"💡 **提示**: 剩余时间大于 36 小时，无需续期，已自动退出任务。"
+                    f"💡 **提示**: 剩余时间大于 35 小时，无需续期，已自动退出任务。"
                 )
                 print(f"-> {msg}")
                 send_telegram_message(msg, screenshot_path)
                 return
 
-            print("7. 剩余时间 <= 36 小时，向后端 POST 接口触发续期指令...")
-            action_res = page.request.post(
-                RENEW_ACTION_URL, headers=base_headers, data=renew_payload
-            )
+            print("7. 剩余时间 <= 35 小时，向后端 POST 接口触发续期指令...")
 
-            if action_res.status != 200:
-                raise RuntimeError(
-                    f"触发续期接口请求失败，HTTP 状态码: {action_res.status}"
+            # 静默 POST 重试逻辑（带有梯度时间间隔，避开防刷拦截）
+            action_info = {}
+            delays = [0, 8, 15]
+
+            for attempt, delay in enumerate(delays, start=1):
+                if delay > 0:
+                    print(f"-> 防刷冷却等待 {delay} 秒后发起第 {attempt} 次 POST 请求...")
+                    time.sleep(delay)
+
+                action_res = page.request.post(
+                    RENEW_ACTION_URL, headers=base_headers, data=renew_payload
                 )
 
-            action_info = parse_action_response(action_res.json())
-            print(f"-> 动作响应状态码: {action_info['status_code']}")
+                if action_res.status != 200:
+                    raise RuntimeError(
+                        f"触发续期接口请求失败，HTTP 状态码: {action_res.status}"
+                    )
+
+                action_info = parse_action_response(action_res.json())
+                if action_info.get("error_msg"):
+                    print(f"-> 接口反馈: {action_info['error_msg']}")
+                else:
+                    print("-> 续期指令 POST 成功！")
+                    break
+
+            if action_info.get("error_msg"):
+                raise RuntimeError(
+                    f"多次尝试 POST 续期仍被拦截: {action_info['error_msg']}"
+                )
 
             print("8. 正在拉取最新的服务器完整数据（确认续期结果）...")
-            page.wait_for_timeout(3000)
+            time.sleep(3)
 
             detail_res_after = page.request.post(
                 RENEW_DETAIL_URL, headers=base_headers, data=renew_payload
@@ -299,6 +311,10 @@ def run():
                 or "未知"
             )
             hours_left_after = calculate_hours_left(expires_at_after)
+
+            # 校验时间是否有真正更新
+            if expires_at_before == expires_at_after:
+                raise RuntimeError("接口调用完成但到期时间未更新，续期未生效。")
 
             capture_step(page, f"步骤 8: 续期更新完成，新到期时间: {expires_at_after}")
 
