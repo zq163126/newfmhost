@@ -164,40 +164,53 @@ def human_mouse_click(page, locator):
 
 
 def click_renew_now_robust(page):
-    """专门针对 Renew now 按钮的强力点击机制（支持自动解除 disabled/JS点穿）"""
+    """全方位穿透式点击 Renew now 按钮"""
     dismiss_ads(page)
 
-    # 1. 尝试精确定位包含 "Renew now" 的 button
-    btn_locator = page.locator('button:has-text("Renew now")').first
+    js_click_all = """
+    () => {
+        // 寻找匹配文本的 button 或其子节点
+        const buttons = Array.from(document.querySelectorAll('button'));
+        const targetBtn = buttons.find(b => b.textContent.includes('Renew now'));
 
-    # 备用 XPath：定位文本包含 Renew now 的 button
-    if btn_locator.count() == 0:
-        btn_locator = page.locator(
-            '//button[contains(normalize-space(.), "Renew now")]'
-        ).first
+        if (!targetBtn) return false;
 
-    btn_locator.wait_for(state="attached", timeout=10000)
+        // 移除可能的禁用状态
+        targetBtn.removeAttribute('disabled');
+        targetBtn.style.pointerEvents = 'auto';
 
-    # 2. 检查按钮是否被禁用了 (disabled)
-    if not btn_locator.is_enabled():
-        print(
-            "⚠️ 警告: 检测到 Renew now 按钮当前处于 Disabled（不可点击）状态！"
-        )
-        print("-> 尝试使用 JavaScript 移除 disabled 属性并直接触发 click()")
-        btn_locator.evaluate(
-            "el => { el.removeAttribute('disabled'); el.click(); }"
-        )
+        // 模拟全套原生点击事件链
+        const mouseEvents = ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'];
+        mouseEvents.forEach(eventType => {
+            const event = new MouseEvent(eventType, {
+                bubbles: true,
+                cancelable: true,
+                view: window
+            });
+            targetBtn.dispatchEvent(event);
+        });
+
+        // 额外尝试直接触发 Element.click()
+        if (typeof targetBtn.click === 'function') {
+            targetBtn.click();
+        }
+
+        return true;
+    }
+    """
+
+    # 优先执行 JS 全套鼠标事件绑定模拟
+    success = page.evaluate(js_click_all)
+    if success:
+        print("-> 已成功通过原生事件冒泡模拟击中 Renew now 按钮")
         return
 
-    # 3. 如果启用，先尝试常规/强制点击
-    try:
-        btn_locator.click(force=True, timeout=3000)
-        print("-> 成功执行 Renew now 常规/强制点击")
-    except Exception as e:
-        print(f"-> 常规点击失败 ({e})，降级采用 JavaScript 直接触发 click()...")
-        # 4. JS 穿透点击
-        btn_locator.evaluate("el => el.click()")
-        print("-> JS 穿透点击已触发")
+    # 备用：Playwright 定位器结合 force=True 点击
+    print("-> 未能在 DOM 中一次性派发事件，尝试强行聚焦后点击...")
+    btn_locator = page.locator('button:has-text("Renew now")').first
+    btn_locator.wait_for(state="attached", timeout=10000)
+    btn_locator.scroll_into_view_if_needed()
+    btn_locator.click(force=True)
 
 
 def get_remaining_time(page):
@@ -315,7 +328,7 @@ def run():
                 send_telegram_message(msg, "step_temp.png")
                 return
 
-            print("8. 剩余时间小于等于 36 小时，正在执行 Renew now 点击...")
+            print("8. 剩余时间小于等于 36 小时，正在执行 Renew now 全套事件派发点击...")
             click_renew_now_robust(page)
             page.wait_for_timeout(2000)
 
