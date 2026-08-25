@@ -46,7 +46,7 @@ def send_telegram_message(text, photo_path=None):
 
 
 def parse_action_response(res_json):
-    """提取接口 A 返回的到期时间与错误消息"""
+    """提取接口 A 返回的到期时间与详细错误消息"""
     action_info = {"expires_at": None, "status_code": "未知", "error_msg": None}
     try:
         outer_p = res_json.get("p", {})
@@ -87,7 +87,7 @@ def parse_action_response(res_json):
 
 
 def parse_detail_response(res_json):
-    """解析接口 B 返回的服务器数据"""
+    """解析接口 B 返回的数据"""
     info = {"name": "未知", "status": "未知"}
     try:
         outer_v = res_json.get("p", {}).get("v", [])
@@ -112,7 +112,7 @@ def parse_detail_response(res_json):
 
 
 def extract_auth_token_from_storage(page):
-    """从 LocalStorage 中精准提取 Access Token"""
+    """从 LocalStorage 中读取 Token"""
     token = page.evaluate("""
         () => {
             for (let i = 0; i < localStorage.length; i++) {
@@ -144,6 +144,7 @@ def run():
         page = context.new_page()
 
         try:
+            # 1. 登录
             print("1. 🔑 正在登录获取 Access Token...")
             page.goto("https://freemchost.com/login", wait_until="networkidle")
 
@@ -158,16 +159,14 @@ def run():
                 raise RuntimeError("未能提取到有效的 Auth Access Token")
             print("✅ 成功提取 Token！")
 
-            # 严格对齐 URL 与页面上下文
+            # 2. 加载服务器详情页建立上下文
             server_page_url = f"https://freemchost.com/app/servers/{SERVER_ID}"
-            print(f"🌐 正在加载服务器上下文页面: {server_page_url}")
+            print(f"🌐 正在跳转服务器详情页: {server_page_url}")
             page.goto(server_page_url, wait_until="networkidle")
 
-            # 预留必要的 XHR/后端上下文建立时间
-            time.sleep(3)
-
-            # 精准构造 Headers
-            headers = {
+            # 3. 发送 POST 续期请求 (接口 A)
+            print("2. ⚡ 步骤 1/2: 正在向后端发送续期指令 (接口 A)...")
+            base_headers = {
                 "accept": "application/x-tss-framed, application/x-ndjson, application/json",
                 "authorization": f"Bearer {access_token}",
                 "content-type": "application/json",
@@ -198,9 +197,7 @@ def run():
                 "m": []
             }
 
-            # 2. 发送 POST 续期指令 (接口 A)
-            print("2. ⚡ 步骤 1/2: 正在向后端发送续期指令 (接口 A)...")
-            action_res = page.request.post(RENEW_ACTION_URL, headers=headers, data=renew_payload)
+            action_res = page.request.post(RENEW_ACTION_URL, headers=base_headers, data=renew_payload)
 
             if action_res.status != 200:
                 raise RuntimeError(f"续期 Action 接口请求失败，HTTP 状态码: {action_res.status}")
@@ -215,14 +212,14 @@ def run():
             print("   ------------------------------------------------")
 
             if error_msg:
-                raise RuntimeError(f"接口 A 响应中包含业务错误: {error_msg}")
+                raise RuntimeError(f"接口 A 拒绝续期: {error_msg}")
 
             if not expires_at:
                 raise RuntimeError("⚠️ 接口 A 响应成功，但未能提取出新到期日期。")
 
-            # 3. 发送 POST 查询最终状态 (接口 B)
+            # 4. 发送 POST 确认请求 (接口 B)
             print("3. 🔍 步骤 2/2: 正在拉取最终服务器完整状态确认 (接口 B)...")
-            detail_res = page.request.post(RENEW_DETAIL_URL, headers=headers, data=renew_payload)
+            detail_res = page.request.post(RENEW_DETAIL_URL, headers=base_headers, data=renew_payload)
             
             server_name = "未知"
             server_status = "未知"
