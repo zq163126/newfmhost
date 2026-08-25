@@ -171,105 +171,50 @@ def click_renew_now_robust(page):
 
 
 def click_discord_confirm_robust(page):
-    """完美融合版：利用之前百分百能定位文字的逻辑获取按钮，再通过物理坐标精准点击"""
+    """固定坐标点击版：直接点击指定坐标，并在截图上标记红点以便人工微调"""
     dismiss_ads(page)
-    print("-> 正在弹窗内部寻找 Discord 续期按钮...")
+    print("-> 正在执行固定坐标点击 Discord 续期按钮...")
 
-    # 1. 优先等待弹窗（dialog）出现
+    # 1. 显式等待弹窗完全展开并稳定
     dialog = page.locator('div[role="dialog"]').first
     try:
         dialog.wait_for(state="visible", timeout=5000)
-        page.wait_for_timeout(600)  # 等待弹窗动画完全结束，确保元素稳定
-        print("-> 已检测到确认弹窗展开")
+        page.wait_for_timeout(800)  # 等待动画结束，确保弹窗静止
+        print("-> 确认弹窗已完全展开")
     except Exception:
-        print("-> 未检测到标准的 dialog 弹窗，尝试全局搜索...")
+        print("-> 未检测到标准的 dialog 弹窗，继续执行坐标点击...")
 
-    # 2. 使用之前验证过成功的 JS 逻辑来查找按钮并获取其坐标
-    coord_result = page.evaluate("""
-        () => {
-            const dialog = document.querySelector('div[role="dialog"]') || document;
-            const buttons = Array.from(dialog.querySelectorAll('button'));
-            
-            const allTexts = buttons.map(b => b.textContent.replace(/\\s+/g, ' ').trim());
-            console.log("弹窗内找到的所有按钮文本:", allTexts);
+    # ==========================================
+    # 📌 在这里调整你的固定坐标 (当前设定为屏幕正中偏下)
+    # ==========================================
+    target_x = 640
+    target_y = 520
 
-            // 只通过 Discord 关键字进行匹配
-            const targetBtn = buttons.find(b => {
-                const text = b.textContent.replace(/\\s+/g, ' ').trim();
-                return text.includes('Discord');
-            });
+    print(f"-> 正在点击固定坐标: X={target_x}, Y={target_y}")
 
-            if (!targetBtn) {
-                return { success: false, allTexts: allTexts };
-            }
-
-            // 获取该按钮在视口中的精确位置
-            const rect = targetBtn.getBoundingClientRect();
-            return {
-                success: true,
-                x: rect.x + rect.width / 2,
-                y: rect.y + rect.height / 2,
-                clickedText: targetBtn.textContent.replace(/\\s+/g, ' ').trim()
-            };
-        }
-    """)
-
-    if isinstance(coord_result, dict) and coord_result.get("success"):
-        x = coord_result.get("x")
-        y = coord_result.get("y")
-        clicked_text = coord_result.get("clickedText")
-        print(f"-> 成功定位 Discord 按钮，文本: [{clicked_text[:30]}...]，坐标: X={x:.1f}, Y={y:.1f}")
+    try:
+        # 2. 在截图上画一个红点标记当前点击位置，并发送到 Telegram 供你观察位置是否准确
+        debug_screenshot_path = "click_debug.png"
+        page.screenshot(path=debug_screenshot_path, full_page=True)
         
         try:
-            # 采用 Playwright 真实物理鼠标点击
-            page.mouse.click(x, y)
-            print("-> 成功通过物理坐标点击 Discord 确认按钮")
-            return
-        except Exception as e:
-            print(f"-> 物理坐标点击异常，尝试使用内置事件派发兜底: {e}")
+            from PIL import Image, ImageDraw
+            img = Image.open(debug_screenshot_path)
+            draw = ImageDraw.Draw(img)
+            # 以点击坐标为中心画一个半径为 8 像素的亮红色圆点
+            r = 8
+            draw.ellipse([target_x - r, target_y - r, target_x + r, target_y + r], fill="red", outline="white", width=2)
+            img.save(debug_screenshot_path)
+            send_telegram_message(f"📍 **坐标调试红点**: 当前测试点击位置 `({target_x}, {target_y})`", debug_screenshot_path)
+        except Exception as img_err:
+            print(f"绘制调试红点失败（不影响点击）：{img_err}")
 
-    # 3. 如果坐标点击有意外，执行原本的事件派发兜底
-    print("-> 正在执行内置事件派发兜底...")
-    success = page.evaluate("""
-        () => {
-            const dialog = document.querySelector('div[role="dialog"]') || document;
-            const buttons = Array.from(dialog.querySelectorAll('button'));
-            const targetBtn = buttons.find(b => b.textContent && b.textContent.includes('Discord'));
-            
-            if (!targetBtn) return false;
-
-            targetBtn.removeAttribute('disabled');
-            targetBtn.style.pointerEvents = 'auto';
-
-            ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(eventType => {
-                targetBtn.dispatchEvent(new MouseEvent(eventType, {
-                    bubbles: true,
-                    cancelable: true,
-                    view: window
-                }));
-            });
-
-            if (typeof targetBtn.click === 'function') {
-                targetBtn.click();
-            }
-            return true;
-        }
-    """)
-
-    if success:
-        print("-> 成功通过事件派发机制触发点击")
-        return
-
-    # 4. 终极 Playwright 文本过滤兜底
-    print("-> 尝试使用 Playwright 文本强行定位点击...")
-    try:
-        target_locator = page.locator('div[role="dialog"] button').filter(has_text=re.compile("Discord", re.IGNORECASE)).first
-        target_locator.wait_for(state="visible", timeout=3000)
-        target_locator.click(force=True)
-        print("-> 通过 Playwright 文本过滤器成功点击")
-        return
+        # 3. 执行物理鼠标点击
+        page.mouse.click(target_x, target_y)
+        print("-> 固定坐标点击动作已执行")
+        
     except Exception as e:
-        raise RuntimeError(f"未能成功点击弹窗内的 Discord 续期确认按钮: {e}")
+        raise RuntimeError(f"固定坐标点击执行失败: {e}")
 
 
 def get_remaining_time(page):
