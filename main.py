@@ -135,137 +135,106 @@ def wait_and_click(page, locator, max_attempts=10):
     )
 
 
-def human_mouse_click(page, locator):
-    """定位元素并使用模拟真实鼠标轨迹移动点击"""
-    locator.wait_for(state="attached", timeout=10000)
-
-    locator.scroll_into_view_if_needed()
-    page.wait_for_timeout(300)
-
-    box = locator.bounding_box()
-    if not box:
-        locator.click(force=True)
-        return
-
-    target_x = box["x"] + box["width"] / 2 + random.uniform(-3, 3)
-    target_y = box["y"] + box["height"] / 2 + random.uniform(-3, 3)
-
-    start_x = random.randint(100, 500)
-    start_y = random.randint(100, 500)
-
-    steps = random.randint(10, 25)
-    for i in range(1, steps + 1):
-        curr_x = start_x + (target_x - start_x) * (i / steps)
-        curr_y = start_y + (target_y - start_y) * (i / steps)
-        page.mouse.move(curr_x, curr_y)
-        time.sleep(random.uniform(0.005, 0.015))
-
-    page.wait_for_timeout(random.randint(100, 200))
-    page.mouse.click(target_x, target_y)
-
-
 def click_renew_now_robust(page):
     """全方位穿透式点击 Renew now 按钮"""
     dismiss_ads(page)
+    print("-> 正在强力触发 Renew now...")
+    
+    result = page.evaluate("""
+        () => {
+            const buttons = Array.from(document.querySelectorAll('button'));
+            const targetBtn = buttons.find(b => b.textContent && b.textContent.includes('Renew now'));
 
-    js_click_all = """
-    () => {
-        const buttons = Array.from(document.querySelectorAll('button'));
-        const targetBtn = buttons.find(b => b.textContent.includes('Renew now'));
+            if (!targetBtn) return { success: false, reason: 'No Renew now button found' };
 
-        if (!targetBtn) return false;
+            targetBtn.removeAttribute('disabled');
+            targetBtn.style.pointerEvents = 'auto';
 
-        targetBtn.removeAttribute('disabled');
-        targetBtn.style.pointerEvents = 'auto';
-
-        const mouseEvents = ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'];
-        mouseEvents.forEach(eventType => {
-            const event = new MouseEvent(eventType, {
-                bubbles: true,
-                cancelable: true,
-                view: window
+            const mouseEvents = ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'];
+            mouseEvents.forEach(eventType => {
+                const event = new MouseEvent(eventType, {
+                    bubbles: true,
+                    cancelable: true,
+                    view: window
+                });
+                targetBtn.dispatchEvent(event);
             });
-            targetBtn.dispatchEvent(event);
-        });
 
-        if (typeof targetBtn.click === 'function') {
-            targetBtn.click();
+            if (typeof targetBtn.click === 'function') {
+                targetBtn.click();
+            }
+
+            return { success: true };
         }
-
-        return true;
-    }
-    """
-
-    success = page.evaluate(js_click_all)
-    if success:
-        print("-> 已成功通过原生事件冒泡模拟击中 Renew now 按钮")
-        return
-
-    print("-> 未能在 DOM 中一次性派发事件，尝试强行聚焦后点击...")
-    btn_locator = page.locator('button:has-text("Renew now")').first
-    btn_locator.wait_for(state="attached", timeout=10000)
-    btn_locator.scroll_into_view_if_needed()
-    btn_locator.click(force=True)
+    """)
+    print(f"-> Renew now 点击结果: {result}")
 
 
 def click_discord_confirm_robust(page):
-    """终极稳健版：模糊匹配文本 + 动态打印所有按钮文本辅助排查"""
+    """精准定位弹窗内部的 Discord Boosted renewal 按钮并点击"""
     dismiss_ads(page)
-    target_keyword = "Discord"  # 使用更宽泛的关键词兜底，或者 "renewal"
+    print("-> 正在弹窗内部寻找 Discord Boosted renewal 按钮...")
 
-    print(f"-> 正在等待 Discord 续期确认弹窗或按钮出现...")
+    # 1. 优先等待弹窗（dialog）出现
+    dialog = page.locator('div[role="dialog"]').first
+    try:
+        dialog.wait_for(state="visible", timeout=5000)
+        print("-> 已检测到确认弹窗展开")
+    except Exception:
+        print("-> 未检测到标准的 dialog 弹窗，尝试全局搜索...")
 
-    # 最多等待 10 秒，每秒检查一次弹窗里有没有出现目标按钮
-    found_success = False
-    for attempt in range(10):
-        dismiss_ads(page)
-        
-        # 用 JS 检查并点击，支持模糊匹配（把所有空白符合并为一个空格）
-        found_success = page.evaluate("""
-            () => {
-                const buttons = Array.from(document.querySelectorAll('button'));
-                // 打印出所有按钮的文本，方便我们在日志里看清
-                const allTexts = buttons.map(b => b.textContent.replace(/\\s+/g, ' ').trim());
-                
-                // 查找包含 'Discord' 或 'renewal' 的按钮
-                const targetBtn = buttons.find(b => {
-                    const text = b.textContent.replace(/\\s+/g, ' ').trim();
-                    return text.includes('Discord') || text.includes('renewal') || text.includes('Boosted');
-                });
-                
-                if (!targetBtn) {
-                    return { success: false, allTexts: allTexts };
-                }
-                
-                targetBtn.removeAttribute('disabled');
-                targetBtn.style.pointerEvents = 'auto';
-                
-                ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(eventType => {
-                    targetBtn.dispatchEvent(new MouseEvent(eventType, {
-                        bubbles: true,
-                        cancelable: true,
-                        view: window
-                    }));
-                });
-                
-                if (typeof targetBtn.click === 'function') {
-                    targetBtn.click();
-                }
-                return { success: true, clickedText: targetBtn.textContent.replace(/\\s+/g, ' ').trim() };
+    # 2. 在弹窗内部寻找包含 'Discord Boosted renewal' 或 '60 hours' 的按钮并点击
+    success = page.evaluate("""
+        () => {
+            const dialog = document.querySelector('div[role="dialog"]') || document;
+            const buttons = Array.from(dialog.querySelectorAll('button'));
+            
+            const allTexts = buttons.map(b => b.textContent.replace(/\\s+/g, ' ').trim());
+            console.log("弹窗内找到的所有按钮文本:", allTexts);
+
+            // 寻找包含 Discord Boosted renewal 或 60 hours 的目标按钮
+            const targetBtn = buttons.find(b => {
+                const text = b.textContent.replace(/\\s+/g, ' ').trim();
+                return text.includes('Discord Boosted renewal') || text.includes('60 hours') || text.includes('Discord');
+            });
+
+            if (!targetBtn) {
+                return { success: false, allTexts: allTexts };
             }
-        """)
 
-        if isinstance(found_success, dict) and found_success.get("success"):
-            print(f"-> 成功通过模糊匹配点击了按钮: [{found_success.get('clickedText')}]")
-            return
+            targetBtn.removeAttribute('disabled');
+            targetBtn.style.pointerEvents = 'auto';
 
-        # 如果没找到，打印当前页面所有的按钮文本帮助我们分析
-        if isinstance(found_success, dict):
-            print(f"-> 第 {attempt + 1} 次尝试未找到，当前页面所有按钮文本: {found_success.get('allTexts')}")
+            ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(eventType => {
+                targetBtn.dispatchEvent(new MouseEvent(eventType, {
+                    bubbles: true,
+                    cancelable: true,
+                    view: window
+                }));
+            });
 
-        page.wait_for_timeout(1000)
+            if (typeof targetBtn.click === 'function') {
+                targetBtn.click();
+            }
 
-    raise RuntimeError("在等待超时后，页面上仍未找到任何包含 Discord / renewal 的按钮。")
+            return { success: true, clickedText: targetBtn.textContent.replace(/\\s+/g, ' ').trim() };
+        }
+    """)
+
+    if isinstance(success, dict) and success.get("success"):
+        print(f"-> 成功点击弹窗内的目标按钮: [{success.get('clickedText')}]")
+        return
+
+    # 如果 JS 未直接命中，尝试使用 Playwright 强行定位
+    print("-> JS 未直接命中，尝试使用 Playwright 文本强行定位点击...")
+    try:
+        target_locator = page.locator('div[role="dialog"] button').filter(has_text=re.compile("Discord Boosted renewal|60 hours|Discord", re.IGNORECASE)).first
+        target_locator.wait_for(state="visible", timeout=3000)
+        target_locator.click(force=True)
+        print("-> 通过 Playwright 文本过滤器成功点击")
+        return
+    except Exception as e:
+        raise RuntimeError(f"未能成功点击弹窗内的 Discord 续期确认按钮: {e}")
 
 
 def get_remaining_time(page):
@@ -395,11 +364,11 @@ def run():
             click_renew_now_robust(page)
             page.wait_for_timeout(3000)
 
-            capture_step(page, "步骤 8: 已完成 Renew now 按钮点击，等待确认界面")
+            capture_step(page, "步骤 8: 已完成 Renew now 按钮点击")
 
-            print("9. 正在尝试定位并点击 Discord 续期确认按钮...")
+            print("9. 正在尝试检测并点击弹窗内的 Discord 续期按钮...")
             click_discord_confirm_robust(page)
-            capture_step(page, "步骤 9: 已点击 Discord Boost 续期确认按钮")
+            capture_step(page, "步骤 9: 检查完毕")
 
             print("10. 等待数据更新...")
             page.wait_for_timeout(5000)
