@@ -7,9 +7,9 @@ import requests
 from playwright.sync_api import sync_playwright
 
 # ==================== 🔧 核心配置区 ====================
-# 1. 登录配置（完全从 GitHub Secrets 读取，不留任何默认值兜底）
-EMAIL = os.getenv("MY_EMAIL")
-PASSWORD = os.getenv("MY_PASSWORD")
+# 1. 登录配置（使用 WEB_EMAIL 和 WEB_PASSWORD）
+EMAIL = os.getenv("WEB_EMAIL")
+PASSWORD = os.getenv("WEB_PASSWORD")
 
 # 2. 路由配置 (2026-06-05 最新双接口链路)
 # 【接口 A】触发续期的 Action 路由
@@ -26,7 +26,7 @@ TG_CHAT_ID = os.getenv("TG_CHAT_ID")
 # 🚨 安全校验：如果必备的环境变量为空，直接中断运行并报错提示，使 GitHub Actions 显式失败
 if not all([EMAIL, PASSWORD]):
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"[{now}] 🛑 错误: 未能在环境中检测到必要的凭证 (MY_EMAIL 或 MY_PASSWORD)。")
+    print(f"[{now}] 🛑 错误: 未能在环境中检测到必要的凭证 (WEB_EMAIL 或 WEB_PASSWORD)。")
     print(f"[{now}] 请检查你的 GitHub Repository -> Settings -> Secrets and variables -> Actions 是否配置正确！")
     sys.exit(1)
 # =====================================================
