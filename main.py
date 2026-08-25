@@ -150,7 +150,7 @@ def click_discord_confirm_robust(page):
     # 📌 你的测试坐标 (1280x800 分辨率)
     # ==========================================
     target_x = 640
-    target_y = 560
+    target_y = 590
 
     print(f"-> 正在渲染调试红点坐标: X={target_x}, Y={target_y}")
 
