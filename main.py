@@ -1,9 +1,9 @@
 import os
 import re
 import time
-import requests
 from datetime import datetime, timezone
 from playwright.sync_api import sync_playwright
+import requests
 
 # 从环境变量中读取配置
 EMAIL = os.environ.get("WEB_EMAIL")
@@ -62,7 +62,9 @@ def wait_and_click(page, locator, max_attempts=10):
         except Exception:
             page.wait_for_timeout(1000)
 
-    raise RuntimeError(f"未能成功点击目标元素 ({locator})，当前页面 URL: {page.url}")
+    raise RuntimeError(
+        f"未能成功点击目标元素 ({locator})，当前页面 URL: {page.url}"
+    )
 
 
 def parse_action_response(res_json):
@@ -96,7 +98,9 @@ def parse_action_response(res_json):
                     if "message" in err_str:
                         action_info["error_msg"] = err_str
                     else:
-                        action_info["error_msg"] = err_val.get("s", "未知错误")
+                        action_info["error_msg"] = err_val.get(
+                            "s", "未知错误"
+                        )
     except Exception as e:
         print(f"解析续期动作响应异常: {e}")
     return action_info
@@ -123,7 +127,9 @@ def parse_detail_response(res_json):
         if "status" in keys:
             info["status"] = values[keys.index("status")].get("s", "未知")
         if "expires_at" in keys:
-            info["expires_at"] = values[keys.index("expires_at")].get("s", None)
+            info["expires_at"] = values[keys.index("expires_at")].get(
+                "s", None
+            )
     except Exception as e:
         print(f"解析最终详情响应异常: {e}")
     return info
@@ -192,12 +198,16 @@ def run():
             page.locator("#password").fill(PASSWORD)
 
             print("3. 点击 Sign in...")
-            signin_btn = page.locator('button[type="submit"]:has-text("Sign in")')
+            signin_btn = page.locator(
+                'button[type="submit"]:has-text("Sign in")'
+            )
             wait_and_click(page, signin_btn)
 
             print("4. 正在验证登录状态（等待页面跳转至后台）...")
             try:
-                page.wait_for_url("**/app**", timeout=15000, wait_until="networkidle")
+                page.wait_for_url(
+                    "**/app**", timeout=15000, wait_until="networkidle"
+                )
                 print(f"-> 成功检测到后台特征 URL，当前位置: {page.url}")
             except Exception:
                 raise RuntimeError(
@@ -206,7 +216,9 @@ def run():
 
             # 先访问一次具体的服务器详情页面，建立正常的用户会话环境，防止被后端判定为恶意直连 API
             server_page_url = f"https://freemchost.com/app/servers/{SERVER_ID}"
-            print(f"4.5. 导航至服务器管理页面以满足冷却规则: {server_page_url}")
+            print(
+                f"4.5. 导航至服务器管理页面以满足冷却规则: {server_page_url}"
+            )
             page.goto(server_page_url, wait_until="networkidle")
             page.wait_for_timeout(3000)
 
@@ -245,6 +257,7 @@ def run():
                             }
                         ],
                     },
+                    "o": 0,
                 },
                 "f": 63,
                 "m": [],
@@ -270,7 +283,10 @@ def run():
                 f"-> 服务器: {server_name} | 状态: {server_status} | 原始到期时间: {expires_at_before}"
             )
             print(f"-> 折算剩余约 {hours_left} 小时")
-            capture_step(page, f"步骤 6: 接口获取信息成功 (剩余 {hours_left} 小时)")
+            capture_step(
+                page,
+                f"步骤 6: 接口获取信息成功 (剩余 {hours_left} 小时)",
+            )
 
             # 判断是否符合续期标准
             if hours_left > 36:
@@ -308,16 +324,22 @@ def run():
                 action_info = parse_action_response(res_data)
 
                 # 检查是否存在冷却提示
-                err_str = str(action_info.get("status_code", "")) + str(action_info.get("error_msg", ""))
+                err_str = str(action_info.get("status_code", "")) + str(
+                    action_info.get("error_msg", "")
+                )
                 if "Please take a moment" in err_str:
-                    print(f"⚠️ 触发冷却限制提示: {err_str}，等待 6 秒后重试...")
+                    print(
+                        f"⚠️ 触发冷却限制提示: {err_str}，等待 6 秒后重试..."
+                    )
                     time.sleep(6)
                 else:
                     break
 
             print(f"-> 动作响应状态: {action_info['status_code']}")
 
-            print("8. 正在拉取最新的服务器完整数据（确认续期结果）...")
+            print(
+                "8. 正在拉取最新的服务器完整数据（确认续期结果）..."
+            )
             page.wait_for_timeout(3000)
 
             detail_res_after = page.request.post(
@@ -332,7 +354,10 @@ def run():
             )
             hours_left_after = calculate_hours_left(expires_at_after)
 
-            capture_step(page, f"步骤 8: 续期更新完成，新到期时间: {expires_at_after}")
+            capture_step(
+                page,
+                f"步骤 8: 续期更新完成，新到期时间: {expires_at_after}",
+            )
 
             page.screenshot(path=screenshot_path, full_page=True)
 
