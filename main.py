@@ -182,6 +182,8 @@ def click_discord_confirm_robust(page):
         # 立即截图发送（注意：这里不调用 dismiss_ads）
         debug_screenshot_path = "click_debug.png"
         page.screenshot(path=debug_screenshot_path, full_page=True)
+        page.mouse.click(target_x, target_y)
+        print("-> 物理点击动作已执行完成")
         send_telegram_message(
             f"📍 **纯净红点调试**: 当前测试坐标 `({target_x}, {target_y})`\n这次没有任何多余动作，看看弹窗还在不在！",
             debug_screenshot_path,
