@@ -171,7 +171,7 @@ def click_renew_now_robust(page):
 
 
 def click_discord_confirm_robust(page):
-    """精准定位弹窗内部的 Discord 续期按钮（仅匹配 Discord 关键字，不依赖具体小时数）"""
+    """精准定位弹窗内的 Discord 按钮，并使用真实的坐标物理点击"""
     dismiss_ads(page)
     print("-> 正在弹窗内部寻找 Discord 续期按钮...")
 
@@ -183,30 +183,44 @@ def click_discord_confirm_robust(page):
     except Exception:
         print("-> 未检测到标准的 dialog 弹窗，尝试全局搜索...")
 
-    # 2. 在弹窗内部寻找包含 'Discord' 的按钮并点击
+    # 2. 通过 Playwright 定位器锁定包含 Discord 的按钮
+    try:
+        # 在弹窗内部寻找包含 Discord 的 button 元素
+        target_btn = page.locator('div[role="dialog"] button').filter(has_text="Discord").first
+        target_btn.wait_for(state="visible", timeout=5000)
+        
+        # 滚动到可视区域并获取坐标进行真实物理点击
+        target_btn.scroll_into_view_if_needed()
+        page.wait_for_timeout(300)
+        
+        # 使用 Playwright 自带的带坐标点击（更贴近真人，能有效触发框架的 onClick 监听）
+        target_btn.click(force=True)
+        print("-> 已成功通过物理坐标点击 Discord 续期按钮")
+        return
+        
+    except Exception as e:
+        print(f"-> 物理点击失败，尝试使用 JS 内部触发机制: {e}")
+
+    # 3. 兜底方案：如果物理点击受阻，利用 JS 寻找该按钮内部的子元素进行点击
     success = page.evaluate("""
         () => {
             const dialog = document.querySelector('div[role="dialog"]') || document;
             const buttons = Array.from(dialog.querySelectorAll('button'));
             
-            const allTexts = buttons.map(b => b.textContent.replace(/\\s+/g, ' ').trim());
-            console.log("弹窗内找到的所有按钮文本:", allTexts);
-
-            // 核心修改：只通过 Discord 关键字进行匹配，不管具体是多少小时
             const targetBtn = buttons.find(b => {
-                const text = b.textContent.replace(/\\s+/g, ' ').trim();
+                const text = b.textContent.replace(/\\s+/g, ' ');
                 return text.includes('Discord');
             });
 
-            if (!targetBtn) {
-                return { success: false, allTexts: allTexts };
-            }
+            if (!targetBtn) return false;
 
-            targetBtn.removeAttribute('disabled');
-            targetBtn.style.pointerEvents = 'auto';
-
+            targetBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            
+            // 尝试点击按钮内部具体的文本段落或直接点击按钮
+            const innerDiv = targetBtn.querySelector('.min-w-0') || targetBtn;
+            
             ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(eventType => {
-                targetBtn.dispatchEvent(new MouseEvent(eventType, {
+                innerDiv.dispatchEvent(new MouseEvent(eventType, {
                     bubbles: true,
                     cancelable: true,
                     view: window
@@ -216,25 +230,13 @@ def click_discord_confirm_robust(page):
             if (typeof targetBtn.click === 'function') {
                 targetBtn.click();
             }
-
-            return { success: true, clickedText: targetBtn.textContent.replace(/\\s+/g, ' ').trim() };
+            return true;
         }
     """)
 
-    if isinstance(success, dict) and success.get("success"):
-        print(f"-> 成功点击弹窗内的目标按钮: [{success.get('clickedText')}]")
-        return
-
-    # 如果 JS 未直接命中，尝试使用 Playwright 强行定位
-    print("-> JS 未直接命中，尝试使用 Playwright 文本强行定位点击...")
-    try:
-        target_locator = page.locator('div[role="dialog"] button').filter(has_text=re.compile("Discord", re.IGNORECASE)).first
-        target_locator.wait_for(state="visible", timeout=3000)
-        target_locator.click(force=True)
-        print("-> 通过 Playwright 文本过滤器成功点击")
-        return
-    except Exception as e:
-        raise RuntimeError(f"未能成功点击弹窗内的 Discord 续期确认按钮: {e}")
+    if not success:
+        raise RuntimeError("未能成功点击弹窗内的 Discord 续期按钮。")
+    print("-> 已通过兜底 JS 触发点击")
 
 
 def get_remaining_time(page):
