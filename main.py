@@ -209,38 +209,37 @@ def click_renew_now_robust(page):
 
 
 def click_discord_confirm_robust(page):
-    """优化版：等待弹窗完全展开后，精准点击 Discord 续期按钮"""
+    """终极稳健版：模糊匹配文本 + 动态打印所有按钮文本辅助排查"""
     dismiss_ads(page)
-    target_text = "Discord Boosted renewal"
+    target_keyword = "Discord"  # 使用更宽泛的关键词兜底，或者 "renewal"
 
-    print(f"-> 正在等待 Discord 续期弹窗完全展开...")
+    print(f"-> 正在等待 Discord 续期确认弹窗或按钮出现...")
 
-    try:
-        # 1. 显式等待包含该文本的按钮所在弹窗变为 open 状态，避免在弹窗刚弹出或关闭时误操作
-        dialog_locator = page.locator('div[role="dialog"]')
-        if dialog_locator.count() > 0:
-            try:
-                dialog_locator.wait_for(state="visible", timeout=5000)
-                # 等待其 data-state 变为 open（如果网站有这个属性的话）
-                page.wait_for_selector('div[role="dialog"][data-state="open"]', timeout=3000)
-            except Exception:
-                pass
-
-        # 2. 直接通过纯 JS 查找并点击，绕过 Playwright 复杂的可见性/滚动视口检测（最稳妥）
-        print("-> 正在通过安全 JS 派发事件点击目标按钮...")
-        success = page.evaluate("""
-            (targetText) => {
+    # 最多等待 10 秒，每秒检查一次弹窗里有没有出现目标按钮
+    found_success = False
+    for attempt in range(10):
+        dismiss_ads(page)
+        
+        # 用 JS 检查并点击，支持模糊匹配（把所有空白符合并为一个空格）
+        found_success = page.evaluate("""
+            () => {
                 const buttons = Array.from(document.querySelectorAll('button'));
-                // 寻找包含目标文本的按钮
-                const targetBtn = buttons.find(b => b.textContent && b.textContent.includes(targetText));
+                // 打印出所有按钮的文本，方便我们在日志里看清
+                const allTexts = buttons.map(b => b.textContent.replace(/\\s+/g, ' ').trim());
                 
-                if (!targetBtn) return false;
+                // 查找包含 'Discord' 或 'renewal' 的按钮
+                const targetBtn = buttons.find(b => {
+                    const text = b.textContent.replace(/\\s+/g, ' ').trim();
+                    return text.includes('Discord') || text.includes('renewal') || text.includes('Boosted');
+                });
                 
-                // 移除禁用状态并强行激活指针
+                if (!targetBtn) {
+                    return { success: false, allTexts: allTexts };
+                }
+                
                 targetBtn.removeAttribute('disabled');
                 targetBtn.style.pointerEvents = 'auto';
                 
-                // 派发全套鼠标事件
                 ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(eventType => {
                     targetBtn.dispatchEvent(new MouseEvent(eventType, {
                         bubbles: true,
@@ -252,18 +251,21 @@ def click_discord_confirm_robust(page):
                 if (typeof targetBtn.click === 'function') {
                     targetBtn.click();
                 }
-                return true;
+                return { success: true, clickedText: targetBtn.textContent.replace(/\\s+/g, ' ').trim() };
             }
-        """, target_text)
+        """)
 
-        if not success:
-            raise RuntimeError(f"未能在按钮列表中找到包含 '{target_text}' 的节点。")
-            
-        print("-> 已成功通过 JS 触发 Discord 续期按钮点击")
+        if isinstance(found_success, dict) and found_success.get("success"):
+            print(f"-> 成功通过模糊匹配点击了按钮: [{found_success.get('clickedText')}]")
+            return
 
-    except Exception as e:
-        print(f"-> 点击过程遇到异常: {e}")
-        raise RuntimeError(f"点击 Discord 续期确认按钮失败: {e}")
+        # 如果没找到，打印当前页面所有的按钮文本帮助我们分析
+        if isinstance(found_success, dict):
+            print(f"-> 第 {attempt + 1} 次尝试未找到，当前页面所有按钮文本: {found_success.get('allTexts')}")
+
+        page.wait_for_timeout(1000)
+
+    raise RuntimeError("在等待超时后，页面上仍未找到任何包含 Discord / renewal 的按钮。")
 
 
 def get_remaining_time(page):
