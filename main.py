@@ -143,9 +143,9 @@ def click_renew_now_robust(page):
 
 
 def click_discord_confirm_robust(page):
-    """固定坐标点击版：通过网页注入 DOM 绘制红点（零依赖，适用于 GitHub Actions）"""
+    """仅调试坐标版：在指定坐标处渲染红点并截图发送，暂不执行点击"""
     dismiss_ads(page)
-    print("-> 正在执行固定坐标点击 Discord 续期按钮...")
+    print("-> 正在执行固定坐标红点调试（暂不点击）...")
 
     # 1. 等待弹窗完全展开
     dialog = page.locator('div[role="dialog"]').first
@@ -154,15 +154,15 @@ def click_discord_confirm_robust(page):
         page.wait_for_timeout(800)  # 等待弹出动画结束，确保窗口静止
         print("-> 确认弹窗已完全展开")
     except Exception:
-        print("-> 未检测到标准的 dialog 弹窗，继续执行坐标点击...")
+        print("-> 未检测到标准的 dialog 弹窗，继续执行红点标记...")
 
     # ==========================================
-    # 📌 可在此处修改测试坐标（分辨率 1280x800）
+    # 📌 在这里修改你的测试坐标 (1280x800 分辨率)
     # ==========================================
     target_x = 640
     target_y = 520
 
-    print(f"-> 正在标记并点击固定坐标: X={target_x}, Y={target_y}")
+    print(f"-> 正在渲染调试红点坐标: X={target_x}, Y={target_y}")
 
     try:
         # 2. 通过网页 DOM 注入一个红色圆点
@@ -193,16 +193,16 @@ def click_discord_confirm_robust(page):
         debug_screenshot_path = "click_debug.png"
         page.screenshot(path=debug_screenshot_path, full_page=True)
         send_telegram_message(
-            f"📍 **坐标调试标记**: 当前点击坐标 `({target_x}, {target_y})`\n请观察红点位置是否精准落在 Discord 按钮上！",
+            f"📍 **坐标调试标记（未执行点击）**: 当前测试坐标 `({target_x}, {target_y})`\n请观察红点是否正好在 Discord 按钮上！",
             debug_screenshot_path,
         )
 
-        # 4. 执行物理鼠标点击
-        page.mouse.click(target_x, target_y)
-        print("-> 固定坐标点击动作已执行")
+        print("-> 红点已渲染并截图发送，本次跳过实际点击")
+        # 暂时注释掉点击，方便你纯调坐标
+        # page.mouse.click(target_x, target_y)
 
     except Exception as e:
-        raise RuntimeError(f"固定坐标点击执行失败: {e}")
+        raise RuntimeError(f"坐标调试红点绘制失败: {e}")
 
 
 def get_remaining_time(page):
