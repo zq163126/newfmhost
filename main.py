@@ -143,21 +143,11 @@ def click_renew_now_robust(page):
 
 
 def click_discord_confirm_robust(page):
-    """仅调试坐标版：在指定坐标处渲染红点并截图发送，暂不执行点击"""
-    dismiss_ads(page)
-    print("-> 正在执行固定坐标红点调试（暂不点击）...")
-
-    # 1. 等待弹窗完全展开
-    dialog = page.locator('div[role="dialog"]').first
-    try:
-        dialog.wait_for(state="visible", timeout=5000)
-        page.wait_for_timeout(800)  # 等待弹出动画结束，确保窗口静止
-        print("-> 确认弹窗已完全展开")
-    except Exception:
-        print("-> 未检测到标准的 dialog 弹窗，继续执行红点标记...")
+    """纯净调试版：绝对不调用任何清理函数，直接画红点截图，排查弹窗消失原因"""
+    print("-> 正在执行纯净坐标调试（不清理广告、不执行点击）...")
 
     # ==========================================
-    # 📌 在这里修改你的测试坐标 (1280x800 分辨率)
+    # 📌 你的测试坐标 (1280x800 分辨率)
     # ==========================================
     target_x = 640
     target_y = 520
@@ -165,7 +155,7 @@ def click_discord_confirm_robust(page):
     print(f"-> 正在渲染调试红点坐标: X={target_x}, Y={target_y}")
 
     try:
-        # 2. 通过网页 DOM 注入一个红色圆点
+        # 直接通过网页 DOM 注入一个红色圆点（不破坏、不点击任何东西）
         page.evaluate(f"""
             () => {{
                 const existing = document.getElementById('debug-click-dot');
@@ -189,20 +179,18 @@ def click_discord_confirm_robust(page):
             }}
         """)
 
-        # 3. 截图发送到 Telegram 观察红点位置
+        # 立即截图发送（注意：这里不调用 dismiss_ads）
         debug_screenshot_path = "click_debug.png"
         page.screenshot(path=debug_screenshot_path, full_page=True)
         send_telegram_message(
-            f"📍 **坐标调试标记（未执行点击）**: 当前测试坐标 `({target_x}, {target_y})`\n请观察红点是否正好在 Discord 按钮上！",
+            f"📍 **纯净红点调试**: 当前测试坐标 `({target_x}, {target_y})`\n这次没有任何多余动作，看看弹窗还在不在！",
             debug_screenshot_path,
         )
 
-        print("-> 红点已渲染并截图发送，本次跳过实际点击")
-        # 暂时注释掉点击，方便你纯调坐标
-        # page.mouse.click(target_x, target_y)
+        print("-> 纯净红点已渲染并截图发送")
 
     except Exception as e:
-        raise RuntimeError(f"坐标调试红点绘制失败: {e}")
+        raise RuntimeError(f"纯净调试红点绘制失败: {e}")
 
 
 def get_remaining_time(page):
