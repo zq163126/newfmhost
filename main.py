@@ -288,12 +288,12 @@ def run():
             # 第一次点击
             print("-> 第一次点击 Renew now...")
             wait_and_click(page, renew_btn, max_attempts=8)
-            page.wait_for_timeout(2000)
+            page.wait_for_timeout(3000)
 
             # 第二次点击
-            print("-> 第二次点击 Renew now...")
-            wait_and_click(page, renew_btn, max_attempts=8)
-            page.wait_for_timeout(2000)
+            # print("-> 第二次点击 Renew now...")
+            # wait_and_click(page, renew_btn, max_attempts=8)
+            # page.wait_for_timeout(2000)
 
             capture_step(page, "步骤 8: 已完成 2 次 Renew now 按钮点击")
 
