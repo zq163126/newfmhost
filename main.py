@@ -208,75 +208,91 @@ def click_renew_now_robust(page):
 
 
 def click_discord_confirm_robust(page):
-    """强力寻找并点击 Discord 续期选项按钮（精准匹配与多重兜底）"""
+    """精准锁定并点击 Discord Boost 续期按钮（基于完整 <button> 结构）"""
     dismiss_ads(page)
     target_text = "Discord Boosted renewal"
 
-    print("-> 正在精准定位 Discord Boost 续期确认区域...")
-    
-    # 方法 1：通过 Playwright 动态查找包含该文字的最外层 clickable 容器或 button
+    print(f"-> 正在精准定位 Discord Boost 续期按钮...")
+
     try:
-        # 查找包含目标文本的元素，并向上寻找其所属的 button 或可点击卡片容器
-        container = page.locator(f'text="{target_text}"').locator('xpath=ancestor-or-self::button | ancestor-or-self::div[@role="button" or contains(@class, "cursor-pointer")]').last
-        
-        if container.count() > 0:
-            container.scroll_into_view_if_needed()
-            page.wait_for_timeout(300)
-            
-            # 尝试使用轨迹模拟点击整个容器
-            box = container.bounding_box()
-            if box:
-                target_x = box["x"] + box["width"] / 2 + random.uniform(-3, 3)
-                target_y = box["y"] + box["height"] / 2 + random.uniform(-3, 3)
-                page.mouse.move(target_x, target_y)
-                page.mouse.click(target_x, target_y)
-                print("-> 方式 1: 成功定位并点击了 Discord 选项的完整容器")
-                return
+        # 直接通过定位包含该文本的 <button> 标签
+        # 从你提供的 HTML 看，整个卡片就是一个 <button>，里面必然包含 "Discord Boosted renewal"
+        btn_locator = page.locator(f'button:has-text("{target_text}")').first
+
+        # 显式等待按钮在页面上完全可见
+        btn_locator.wait_for(state="visible", timeout=10000)
+        btn_locator.scroll_into_view_if_needed()
+        page.wait_for_timeout(500)
+
+        # 1. 尝试标准 Playwright 点击
+        try:
+            btn_locator.click(force=True, timeout=3000)
+            print("-> 成功点击了 Discord Boost 续期按钮")
+            return
+        except Exception:
+            pass
+
+        # 2. 如果被遮挡或事件拦截，使用 JS 直接对该 <button> 触发全套点击事件
+        print("-> 标准点击受阻，正在通过 JS 触发该按钮的完整事件...")
+        page.evaluate(
+            """
+            (btn) => {
+                if (!btn) return false;
+                btn.removeAttribute('disabled');
+                btn.style.pointerEvents = 'auto';
+                
+                // 依次派发鼠标事件，完美触发现代框架的监听
+                ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(eventType => {
+                    btn.dispatchEvent(new MouseEvent(eventType, {
+                        bubbles: true,
+                        cancelable: true,
+                        view: window
+                    }));
+                });
+                
+                if (typeof btn.click === 'function') {
+                    btn.click();
+                }
+                return true;
+            }
+        """,
+            btn_locator.element_handle(),
+        )
+        print("-> 已通过 JS 成功点击目标 <button> 元素")
+
     except Exception as e:
-        print(f"-> 方式 1 尝试未成功 ({e})，正在启动增强型 JS 深度检索...")
+        print(f"-> 常规定位遇到阻碍，启用终极 JS 搜索兜底: {e}")
 
-    # 方法 2：通过原生 JS 遍历所有含有该文本的元素，找到其真正的可点击父级（Button/Card）并全事件触发
-    js_click_discord_deep = """
-    () => {
-        const targetText = "Discord Boosted renewal";
-        // 查找所有包含该文本的元素
-        const allElements = Array.from(document.querySelectorAll('*'));
-        const matchedElements = allElements.filter(el => el.children.length === 0 && el.textContent && el.textContent.includes(targetText));
-        
-        if (matchedElements.length === 0) return false;
-        
-        // 取最后一个（通常是最内层的文本节点所在处），向上寻找最近的 button 或可点击容器
-        const targetEl = matchedElements[matchedElements.length - 1];
-        const clickable = targetEl.closest('button') || targetEl.closest('[role="button"]') || targetEl.closest('.cursor-pointer') || targetEl.closest('div.flex');
-        
-        if (!clickable) return false;
-        
-        clickable.removeAttribute('disabled');
-        clickable.style.pointerEvents = 'auto';
-        
-        // 触发全套鼠标事件以确保前端框架（如 React/Vue）捕获到点击
-        const events = ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'];
-        events.forEach(eventType => {
-            clickable.dispatchEvent(new MouseEvent(eventType, {
-                bubbles: true,
-                cancelable: true,
-                view: window
-            }));
-        });
-        
-        if (typeof clickable.click === 'function') {
-            clickable.click();
-        }
-        
-        return true;
-    }
-    """
+        # 3. 终极兜底：直接在全局所有 button 中查找包含该文本的元素并点击
+        success = page.evaluate(
+            """
+            () => {
+                const buttons = Array.from(document.querySelectorAll('button'));
+                const targetBtn = buttons.find(b => b.textContent && b.textContent.includes('Discord Boosted renewal'));
+                
+                if (!targetBtn) return false;
+                
+                targetBtn.scrollIntoView();
+                ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(eventType => {
+                    targetBtn.dispatchEvent(new MouseEvent(eventType, {
+                        bubbles: true,
+                        cancelable: true,
+                        view: window
+                    }));
+                });
+                
+                if (typeof targetBtn.click === 'function') {
+                    targetBtn.click();
+                }
+                return true;
+            }
+        """
+        )
 
-    success = page.evaluate(js_click_discord_deep)
-    if success:
-        print("-> 方式 2: 已通过深度 JS 成功唤醒并点击了 Discord 续期选项卡")
-    else:
-        raise RuntimeError("未能成功点击 Discord Boost 续期确认按钮（未找到匹配的交互容器）。")
+        if not success:
+            raise RuntimeError(
+                f"未能找到包含 '{target_text}' 的完整 <button> 交互元素。"
+            )
 
 
 def get_remaining_time(page):
