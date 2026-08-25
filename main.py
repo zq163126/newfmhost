@@ -18,7 +18,6 @@ def send_telegram_message(text, photo_path=None):
         print("Telegram 配置不完整，跳过发送消息。")
         return
 
-    # 发送文本
     text_url = f"https://api.telegram.org/bot{TG_BOT_TOKEN}/sendMessage"
     text_data = {"chat_id": TG_CHAT_ID, "text": text, "parse_mode": "Markdown"}
     try:
@@ -27,7 +26,6 @@ def send_telegram_message(text, photo_path=None):
     except Exception as e:
         print(f"发送 Telegram 文本失败: {e}")
 
-    # 发送图片
     if photo_path and os.path.exists(photo_path):
         photo_url = f"https://api.telegram.org/bot{TG_BOT_TOKEN}/sendPhoto"
         try:
@@ -165,6 +163,43 @@ def human_mouse_click(page, locator):
     page.mouse.click(target_x, target_y)
 
 
+def click_renew_now_robust(page):
+    """专门针对 Renew now 按钮的强力点击机制（支持自动解除 disabled/JS点穿）"""
+    dismiss_ads(page)
+
+    # 1. 尝试精确定位包含 "Renew now" 的 button
+    btn_locator = page.locator('button:has-text("Renew now")').first
+
+    # 备用 XPath：定位文本包含 Renew now 的 button
+    if btn_locator.count() == 0:
+        btn_locator = page.locator(
+            '//button[contains(normalize-space(.), "Renew now")]'
+        ).first
+
+    btn_locator.wait_for(state="attached", timeout=10000)
+
+    # 2. 检查按钮是否被禁用了 (disabled)
+    if not btn_locator.is_enabled():
+        print(
+            "⚠️ 警告: 检测到 Renew now 按钮当前处于 Disabled（不可点击）状态！"
+        )
+        print("-> 尝试使用 JavaScript 移除 disabled 属性并直接触发 click()")
+        btn_locator.evaluate(
+            "el => { el.removeAttribute('disabled'); el.click(); }"
+        )
+        return
+
+    # 3. 如果启用，先尝试常规/强制点击
+    try:
+        btn_locator.click(force=True, timeout=3000)
+        print("-> 成功执行 Renew now 常规/强制点击")
+    except Exception as e:
+        print(f"-> 常规点击失败 ({e})，降级采用 JavaScript 直接触发 click()...")
+        # 4. JS 穿透点击
+        btn_locator.evaluate("el => el.click()")
+        print("-> JS 穿透点击已触发")
+
+
 def get_remaining_time(page):
     """获取当前的剩余续期时间"""
     timer_element = page.locator('div[role="timer"]').first
@@ -247,12 +282,10 @@ def run():
                 'button[role="tab"]:has-text("Manage"), button:has-text("Manage")'
             )
 
-            # 第一次点击
             print("-> 第一次点击 Manage...")
             wait_and_click(page, manage_tab, max_attempts=12)
             page.wait_for_timeout(2000)
 
-            # 第二次点击
             print("-> 第二次点击 Manage...")
             wait_and_click(page, manage_tab, max_attempts=12)
             page.wait_for_timeout(2000)
@@ -270,7 +303,7 @@ def run():
                 f"步骤 7: 已读取续期前时间 ({time_before}, {total_hours}h)",
             )
 
-            # 统一按小时判断：若大于 36 小时则无需续期直接退出
+            # 按小时判断：若大于 36 小时则无需续期直接退出
             if total_hours > 36:
                 msg = (
                     f"ℹ️ **Freemchost 自动续期跳过**\n\n"
@@ -282,20 +315,11 @@ def run():
                 send_telegram_message(msg, "step_temp.png")
                 return
 
-            print("8. 剩余时间小于等于 36 小时，正在点击 Renew now 按钮（共点击 2 次，间隔 2 秒）...")
-            renew_btn = page.locator('button:has-text("Renew now")')
+            print("8. 剩余时间小于等于 36 小时，正在执行 Renew now 点击...")
+            click_renew_now_robust(page)
+            page.wait_for_timeout(2000)
 
-            # 第一次点击
-            print("-> 第一次点击 Renew now...")
-            wait_and_click(page, renew_btn, max_attempts=8)
-            page.wait_for_timeout(3000)
-
-            # 第二次点击
-            # print("-> 第二次点击 Renew now...")
-            # wait_and_click(page, renew_btn, max_attempts=8)
-            # page.wait_for_timeout(2000)
-
-            capture_step(page, "步骤 8: 已完成 2 次 Renew now 按钮点击")
+            capture_step(page, "步骤 8: 已完成 Renew now 按钮点击")
 
             print("9. 基于 Discord Boost 固定文本定位并点击续期确认按钮...")
             dismiss_ads(page)
