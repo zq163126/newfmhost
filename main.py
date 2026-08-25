@@ -10,6 +10,7 @@ EMAIL = os.environ.get("WEB_EMAIL")
 PASSWORD = os.environ.get("WEB_PASSWORD")
 TG_BOT_TOKEN = os.environ.get("TG_BOT_TOKEN")
 TG_CHAT_ID = os.environ.get("TG_CHAT_ID")
+PROXY_SOCKS5 = os.environ.get("PROXY_SOCKS5", "").strip()
 
 
 def send_telegram_message(text, photo_path=None):
@@ -216,7 +217,6 @@ def click_discord_confirm_robust(page):
 
     try:
         # 直接通过定位包含该文本的 <button> 标签
-        # 从你提供的 HTML 看，整个卡片就是一个 <button>，里面必然包含 "Discord Boosted renewal"
         btn_locator = page.locator(f'button:has-text("{target_text}")').first
 
         # 显式等待按钮在页面上完全可见
@@ -333,8 +333,19 @@ def run():
     screenshot_path = "result.png"
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        context = browser.new_context(viewport={"width": 1280, "height": 800})
+        # 配置浏览器启动参数
+        launch_args = ["--no-sandbox", "--disable-setuid-sandbox"]
+        browser = p.chromium.launch(headless=True, args=launch_args)
+
+        # 动态绑定代理配置
+        context_args = {"viewport": {"width": 1280, "height": 800}}
+        if PROXY_SOCKS5:
+            print(f"-> 成功绑定代理通道: {PROXY_SOCKS5}")
+            context_args["proxy"] = {"server": PROXY_SOCKS5}
+        else:
+            print("-> 未检测到代理配置，使用直连模式。")
+
+        context = browser.new_context(**context_args)
         page = context.new_page()
 
         try:
