@@ -209,83 +209,61 @@ def click_renew_now_robust(page):
 
 
 def click_discord_confirm_robust(page):
-    """调试版：精准定位并点击 Discord 续期按钮（增加 DOM 结构打印与广谱标签兜底）"""
+    """优化版：等待弹窗完全展开后，精准点击 Discord 续期按钮"""
     dismiss_ads(page)
     target_text = "Discord Boosted renewal"
 
-    print(f"-> 正在诊断并寻找页面中包含 '{target_text}' 的元素...")
-
-    # 先用 JS 在控制台打印出匹配该文字的所有元素的标签名和外层 HTML
-    debug_info = page.evaluate(
-        """
-        (targetText) => {
-            const allElements = Array.from(document.querySelectorAll('*'));
-            const matched = allElements.filter(el => el.textContent && el.textContent.includes(targetText) && el.children.length < 5);
-            return matched.map(el => ({
-                tag: el.tagName,
-                outerHTML: el.outerHTML.substring(0, 300)
-            }));
-        }
-    """,
-        target_text,
-    )
-
-    print(f"-> 诊断结果：找到 {len(debug_info)} 个相关节点。详情预览：")
-    for idx, info in enumerate(debug_info[:3]):
-        print(f"  [{idx+1}] 标签: <{info['tag']}> -> {info['outerHTML']}...")
+    print(f"-> 正在等待 Discord 续期弹窗完全展开...")
 
     try:
-        broad_locator = page.locator(
-            f'button:has-text("{target_text}"), [role="button"]:has-text("{target_text}"), div.cursor-pointer:has-text("{target_text}"), div:has-text("{target_text}")'
-        ).last
+        # 1. 显式等待包含该文本的按钮所在弹窗变为 open 状态，避免在弹窗刚弹出或关闭时误操作
+        dialog_locator = page.locator('div[role="dialog"]')
+        if dialog_locator.count() > 0:
+            try:
+                dialog_locator.wait_for(state="visible", timeout=5000)
+                # 等待其 data-state 变为 open（如果网站有这个属性的话）
+                page.wait_for_selector('div[role="dialog"][data-state="open"]', timeout=3000)
+            except Exception:
+                pass
 
-        broad_locator.wait_for(state="visible", timeout=8000)
-        broad_locator.scroll_into_view_if_needed()
-        page.wait_for_timeout(300)
-
-        broad_locator.click(force=True, timeout=3000)
-        print("-> 成功通过广谱定位点击了 Discord 续期目标")
-        return
-
-    except Exception as e:
-        print(f"-> 常规广谱定位受阻 ({e})，启动终极无差别 JS 暴力点击...")
-
-        success = page.evaluate(
-            """
+        # 2. 直接通过纯 JS 查找并点击，绕过 Playwright 复杂的可见性/滚动视口检测（最稳妥）
+        print("-> 正在通过安全 JS 派发事件点击目标按钮...")
+        success = page.evaluate("""
             (targetText) => {
-                const allElements = Array.from(document.querySelectorAll('*'));
-                const targetNode = allElements.find(el => el.children.length === 0 && el.textContent && el.textContent.includes(targetText));
+                const buttons = Array.from(document.querySelectorAll('button'));
+                // 寻找包含目标文本的按钮
+                const targetBtn = buttons.find(b => b.textContent && b.textContent.includes(targetText));
                 
-                if (!targetNode) return false;
+                if (!targetBtn) return false;
                 
-                let clickable = targetNode.closest('button') || targetNode.closest('[role="button"]') || targetNode.closest('.cursor-pointer') || targetNode.parentElement;
+                // 移除禁用状态并强行激活指针
+                targetBtn.removeAttribute('disabled');
+                targetBtn.style.pointerEvents = 'auto';
                 
-                if (!clickable) clickable = targetNode;
-                
-                clickable.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                
+                // 派发全套鼠标事件
                 ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(eventType => {
-                    clickable.dispatchEvent(new MouseEvent(eventType, {
+                    targetBtn.dispatchEvent(new MouseEvent(eventType, {
                         bubbles: true,
                         cancelable: true,
                         view: window
                     }));
                 });
                 
-                if (typeof clickable.click === 'function') {
-                    clickable.click();
+                if (typeof targetBtn.click === 'function') {
+                    targetBtn.click();
                 }
                 return true;
             }
-        """,
-            target_text,
-        )
+        """, target_text)
 
         if not success:
-            raise RuntimeError(
-                f"页面上彻底未找到包含 '{target_text}' 的文字节点。"
-            )
-        print("-> 已通过终极无差别 JS 成功触发点击")
+            raise RuntimeError(f"未能在按钮列表中找到包含 '{target_text}' 的节点。")
+            
+        print("-> 已成功通过 JS 触发 Discord 续期按钮点击")
+
+    except Exception as e:
+        print(f"-> 点击过程遇到异常: {e}")
+        raise RuntimeError(f"点击 Discord 续期确认按钮失败: {e}")
 
 
 def get_remaining_time(page):
