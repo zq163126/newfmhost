@@ -143,61 +143,64 @@ def click_renew_now_robust(page):
 
 
 def click_discord_confirm_robust(page):
-    """终极遮罩层清除版：先剥离底层遮罩拦截，再执行物理级点击"""
-    print("-> 正在清除背景遮罩拦截并点击 Discord 续期按钮...")
+    """高亮诊断版：在页面截图中用红框明确标出锁定的 Discord 按钮，用于人工复核"""
+    print("-> 正在执行 Discord 按钮的可视化高亮与精准定位诊断...")
 
     try:
         # 1. 确保弹窗可见
         dialog = page.locator('div[role="dialog"]').first
         dialog.wait_for(state="visible", timeout=10000)
-        page.wait_for_timeout(500)
+        page.wait_for_timeout(800)
 
-        # 2. 暴力破解：通过 JS 移除全屏遮罩的鼠标事件拦截，并精准点击目标按钮
-        clicked_success = page.evaluate("""
+        # 2. 通过 JS 寻找目标按钮，并直接在 DOM 中给它加上醒目的红色边框和黄色背景，方便截图肉眼确认
+        debug_info = page.evaluate("""
             () => {
-                // 步骤 A：把所有可能挡路的背景遮罩层 pointer-events 设为 none，或者直接移除
-                const backdrops = document.querySelectorAll('div[data-state="open"].fixed.inset-0');
-                backdrops.forEach(b => {
-                    b.style.pointerEvents = 'none';
-                });
-
-                // 步骤 B：寻找 Discord 续期按钮
                 const buttons = Array.from(document.querySelectorAll('div[role="dialog"] button[type="button"]'));
+                
+                // 打印出弹窗里所有的按钮结构，供我们对照
+                const allTexts = buttons.map((b, i) => `[${i}] -> ${b.textContent.trim().replace(/\\s+/g, ' ')}`);
+
+                // 寻找 Discord 续期按钮
                 const targetBtn = buttons.find(b => {
                     const text = b.textContent || '';
                     return text.includes('Discord Boosted renewal') || text.includes('60 hours');
                 });
 
-                if (!targetBtn) return false;
+                if (!targetBtn) {
+                    return { found: false, allTexts: allTexts };
+                }
 
-                // 步骤 C：确保按钮本身可以点击
-                targetBtn.removeAttribute('disabled');
-                targetBtn.style.pointerEvents = 'auto';
+                // 找到后，给它加上一个非常显眼的红色粗边框和亮黄色背景，方便在截图里看
+                targetBtn.style.border = '4px solid #ff0000';
+                targetBtn.style.backgroundColor = '#ffff00';
+                targetBtn.style.boxShadow = '0 0 20px #ff0000';
 
-                // 步骤 D：用原生 click
-                targetBtn.click();
-                return true;
+                return { found: true, allTexts: allTexts, matchedText: targetBtn.textContent.trim() };
             }
         """)
 
-        if clicked_success:
-            print("-> 🎯 已成功清除遮罩并触发 Discord 按钮点击！")
-        else:
-            print("-> ⚠️ 未能找到按钮，执行坐标兜底...")
-            page.mouse.click(640, 590)
+        print(f"-> 🔍 诊断结果: {debug_info}")
 
-        page.wait_for_timeout(800)
-
-        # 3. 截图发送到 TG 观察效果
+        # 3. 截取带有高亮标记的画面发到 TG
         debug_screenshot_path = "click_debug.png"
         page.screenshot(path=debug_screenshot_path, full_page=True)
+        
         send_telegram_message(
-            f"📍 **遮罩清除点击调试**: 已执行无遮罩强力点击！",
+            f"📍 **按钮高亮诊断报告**:\n"
+            f"🎯 是否找到目标按钮: `{debug_info['found']}`\n"
+            f"📝 匹配到的内容: `{debug_info.get('matchedText', '未找到')}`\n"
+            f"📋 弹窗内所有按钮列表:\n```\n{json.dumps(debug_info['allTexts'], indent=2, ensure_ascii=False) if 'allTexts' in debug_info else '无'}```",
             debug_screenshot_path,
         )
 
+        if debug_info['found']:
+            # 如果找对了，顺便执行一次物理点击
+            target_locator = page.locator('div[role="dialog"] button[type="button"]').filter(has_text="Discord Boosted renewal").first
+            target_locator.click(force=True)
+            print("-> 已对高亮锁定的按钮执行点击")
+
     except Exception as e:
-        raise RuntimeError(f"遮罩清除点击失败: {e}")
+        raise RuntimeError(f"高亮诊断失败: {e}")
 
 
 def get_remaining_time(page):
