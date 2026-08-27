@@ -158,7 +158,7 @@ def click_discord_confirm_robust(page):
                 // 查找所有按钮
                 const buttons = Array.from(document.querySelectorAll('button'));
                 // 通过特征文案匹配
-                const targetBtn = buttons.find(b => b.textContent && b.textContent.includes('Discord Boosted renewal'));
+                const targetBtn = buttons.find(b => b.textContent && b.textContent.includes('Discord Boosted renewal — your linked Discord account gives you extra free time'));
                 
                 if (!targetBtn) return false;
 
