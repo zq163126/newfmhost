@@ -143,31 +143,42 @@ def click_renew_now_robust(page):
 
 
 def click_discord_confirm_robust(page):
-    """终极 JS 穿透点击版：直接在浏览器内部通过特征文案定位并暴力触发点击"""
-    print("-> 正在执行终极 JS 穿透点击 Discord 确认按钮...")
+    """诊断版：打印页面所有按钮文案，并使用多重选择器强制穿透点击"""
+    print("-> 正在执行 Discord 确认按钮的深度排查与强力点击...")
 
     try:
-        # 1. 确保弹窗完全展开
+        # 1. 确保弹窗可见
         dialog = page.locator('div[role="dialog"]').first
         dialog.wait_for(state="visible", timeout=10000)
-        page.wait_for_timeout(1000)  # 等待动画完全稳定
+        page.wait_for_timeout(1000)
 
-        # 2. 通过浏览器内部 JS 直接寻找包含该文案的按钮并强制触发点击
+        # 2. 诊断：把弹窗内的所有按钮文案打印出来，方便我们在日志里看看到底匹配到了什么
+        all_button_texts = page.evaluate("""
+            () => {
+                const buttons = Array.from(document.querySelectorAll('div[role="dialog"] button, button'));
+                return buttons.map((b, index) => `[${index}] text: "${b.textContent.trim().replace(/\\s+/g, ' ')}"`);
+            }
+        """)
+        print(f"-> 🔍 页面当前弹窗中的所有按钮列表: {all_button_texts}")
+
+        # 3. 强力 JavaScript 点击（使用更宽泛的正则模糊匹配，防止换行或特殊空格导致匹配失败）
         clicked_success = page.evaluate("""
             () => {
-                // 查找所有按钮
                 const buttons = Array.from(document.querySelectorAll('button'));
-                // 通过特征文案匹配
-                const targetBtn = buttons.find(b => b.textContent && b.textContent.includes('Discord Boosted renewal — your linked Discord account gives you extra free time'));
+                // 查找包含 Discord 或 renewal 的按钮
+                const targetBtn = buttons.find(b => {
+                    const text = b.textContent || '';
+                    return text.includes('Discord Boosted') || text.includes('Discord Boosted renewal') || text.includes('renewal');
+                });
                 
                 if (!targetBtn) return false;
 
-                // 移除可能的禁用状态和 pointer-events 限制
+                // 移除禁用限制
                 targetBtn.removeAttribute('disabled');
                 targetBtn.style.pointerEvents = 'auto';
                 targetBtn.style.opacity = '1';
 
-                // 派发全套鼠标事件
+                // 派发事件
                 ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(eventType => {
                     targetBtn.dispatchEvent(new MouseEvent(eventType, {
                         bubbles: true,
@@ -177,28 +188,31 @@ def click_discord_confirm_robust(page):
                     }));
                 });
 
-                // 直接调用原生点击
                 targetBtn.click();
                 return true;
             }
         """)
 
         if clicked_success:
-            print("-> JS 强制穿透点击指令已成功派发到目标按钮")
+            print("-> 🎯 JS 成功锁定了目标按钮并触发了点击！")
         else:
-            print("-> 未能在 DOM 中通过文案找到目标按钮，尝试通过坐标强行点击...")
+            print("-> ⚠️ JS 未能通过文本匹配到按钮，执行备用坐标点击 (640, 590)...")
             page.mouse.click(640, 590)
 
-        # 3. 截图发送到 TG 观察效果
+        # 4. 截图与调试信息
         debug_screenshot_path = "click_debug.png"
         page.screenshot(path=debug_screenshot_path, full_page=True)
+        
+        button_list_str = "\n".join(all_button_texts[:10]) if all_button_texts else "无按钮"
         send_telegram_message(
-            f"📍 **终极 JS 穿透点击调试**: 已执行 JS 强力点击，请检查弹窗是否触发跳转或关闭！",
+            f"📍 **按钮定位调试报告**:\n"
+            f"🔘 识别到的按钮:\n```{button_list_str}```\n"
+            f"🎯 JS 点击结果: `{clicked_success}`",
             debug_screenshot_path,
         )
 
     except Exception as e:
-        raise RuntimeError(f"终极 JS 点击 Discord 按钮失败: {e}")
+        raise RuntimeError(f"排查点击 Discord 按钮失败: {e}")
 
 
 def get_remaining_time(page):
