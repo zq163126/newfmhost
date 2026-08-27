@@ -53,7 +53,7 @@ def capture_step(page, step_name, screenshot_path="step_temp.png"):
 
 
 def dismiss_ads(page):
-    """纯 DOM/CSS 级去广告函数（包含最新捕捉的 Close 按钮）"""
+    """纯 DOM/CSS 级去广告函数"""
     try:
         page.add_style_tag(
             content="""
@@ -70,7 +70,6 @@ def dismiss_ads(page):
 
     js_close_script = """
     () => {
-        // 1. 匹配常规的 lucide-x 关闭图标、#dismiss-button
         const closeIcons = Array.from(document.querySelectorAll('svg.lucide-x, #dismiss-button'));
         for (const icon of closeIcons) {
             const btn = icon.closest('button') || icon;
@@ -78,24 +77,11 @@ def dismiss_ads(page):
                 btn.click();
             }
         }
-
-        // 2. 匹配 sr-only 为 Close 的按钮
         const srCloses = Array.from(document.querySelectorAll('span.sr-only'));
         for (const span of srCloses) {
             if (span.textContent.trim() === 'Close') {
                 const btn = span.closest('button');
                 if (btn) btn.click();
-            }
-        }
-
-        // 3. 【新增】专门匹配你发的新弹窗右上角绝对定位的 Close 按钮
-        const absoluteCloseBtns = Array.from(document.querySelectorAll('button.absolute.right-4.top-4'));
-        for (const btn of absoluteCloseBtns) {
-            if (btn && typeof btn.click === 'function') {
-                // 确保它是带有 Close 字样或者含有 svg.lucide-x 的弹窗关闭按钮，避免误伤其他按钮
-                if (btn.querySelector('svg.lucide-x') || btn.textContent.includes('Close')) {
-                    btn.click();
-                }
             }
         }
     }
@@ -107,14 +93,6 @@ def dismiss_ads(page):
             frame.evaluate(js_close_script)
         except Exception:
             pass
-        
-    # 4. 【新增】通过你提供的 XPath 兜底尝试强制点击关闭（如果存在的话）
-    try:
-        close_xpath_locator = page.locator('xpath=//*[@id="radix-_r_9_"]/button')
-        if close_xpath_locator.count() > 0 and close_xpath_locator.first.is_visible():
-            close_xpath_locator.first.click(force=True, timeout=500)
-    except Exception:
-        pass
 
 
 def wait_and_click(page, locator, max_attempts=10):
@@ -344,8 +322,8 @@ def run():
             click_discord_confirm_robust(page)
 
             print("10. 等待数据更新...")
-            page.wait_for_timeout(5000)
-           # dismiss_ads(page)
+            page.wait_for_timeout(7000)
+            # dismiss_ads(page)
             capture_step(page, "步骤 10: 续期等待完成，准备读取最新时间")
 
             print("11. 正在获取 Renew 操作后的时间...")
