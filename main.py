@@ -165,43 +165,50 @@ def click_renew_now_robust(page):
 
 
 def click_discord_confirm_robust(page):
-    """精准文本定位版：通过 Discord Boosted renewal 专属文案锁定并点击按钮"""
-    print("-> 正在通过特征文案寻找并点击 Discord 续期按钮...")
+    """最终点击版：在确认无误的坐标处执行真实物理点击"""
+    print("-> 正在执行 Discord 续期按钮精准点击...")
+
+    # ==========================================
+    # 📌 已经调整好的完美坐标
+    # ==========================================
+    target_x = 640
+    target_y = 580  # 改成你通过红点确认好的最终 Y 坐标
+
+    print(f"-> 正在向坐标 (X={target_x}, Y={target_y}) 发起物理点击")
 
     try:
-        # 1. 确保弹窗完全展开
-        dialog = page.locator('div[role="dialog"]').first
-        dialog.wait_for(state="visible", timeout=10000)
-        page.wait_for_timeout(500)  # 等待动画稳定
+        # 可选：如果你想保留红点轨迹作记录，可以留着下面这段画红点代码；如果不需要可以直接删掉
+        page.evaluate(f"""
+            () => {{
+                const existing = document.getElementById('debug-click-dot');
+                if (existing) existing.remove();
 
-        # 2. 通过你给出的专属文案精准定位这个按钮
-        target_btn = page.locator('button').filter(
-            has_text="Discord Boosted renewal"
-        ).first
+                const dot = document.createElement('div');
+                dot.id = 'debug-click-dot';
+                dot.style.position = 'fixed';
+                dot.style.left = '{target_x}px';
+                dot.style.top = '{target_y}px';
+                dot.style.width = '16px';
+                dot.style.height = '16px';
+                dot.style.backgroundColor = '#00ff00';  # 调好后可以换成绿点表示成功
+                dot.style.border = '2px solid #ffffff';
+                dot.style.borderRadius = '50%';
+                dot.style.transform = 'translate(-50%, -50%)';
+                dot.style.zIndex = '9999999';
+                dot.style.pointerEvents = 'none';
+                document.body.appendChild(dot);
+            }}
+        """)
+        page.wait_for_timeout(300) # 稍微停顿一下让绿点渲染
 
-        if target_btn.count() > 0 and target_btn.is_visible():
-            print("-> 成功通过专属文案锁定按钮，正在执行点击...")
-            target_btn.click(force=True)
-        else:
-            # 备用兜底：如果没抓到，在 dialog 里面找包含 "Discord Boosted" 的按钮
-            print("-> 尝试使用模糊文案兜底定位...")
-            fallback_btn = dialog.locator('button').filter(
-                has_text=re.compile(r"Discord Boosted", re.IGNORECASE)
-            ).first
-            fallback_btn.click(force=True)
-
-        print("-> Discord 按钮元素点击已执行")
-
-        # 3. 截图发送到 TG 观察效果
-        debug_screenshot_path = "click_debug.png"
-        page.screenshot(path=debug_screenshot_path, full_page=True)
-        send_telegram_message(
-            f"📍 **精准文案定位调试**: 已通过特征文案完成点击，请检查弹窗是否成功消失！",
-            debug_screenshot_path,
-        )
+        # ==========================================
+        # 🔑 核心：取消注释，执行真实的物理点击！
+        # ==========================================
+        page.mouse.click(target_x, target_y)
+        print("-> 物理点击动作已执行完成")
 
     except Exception as e:
-        raise RuntimeError(f"文案定位点击 Discord 按钮失败: {e}")
+        raise RuntimeError(f"点击 Discord 续期确认按钮失败: {e}")
 
 
 def get_remaining_time(page):
