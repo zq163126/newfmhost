@@ -143,77 +143,62 @@ def click_renew_now_robust(page):
 
 
 def click_discord_confirm_robust(page):
-    """组合拳点击版：特征文案精准定位点击 + 固定坐标物理红点点击双保险"""
-    print("-> 正在执行 Discord 确认按钮的组合拳点击（文案定位 + 坐标补刀）...")
+    """终极 JS 穿透点击版：直接在浏览器内部通过特征文案定位并暴力触发点击"""
+    print("-> 正在执行终极 JS 穿透点击 Discord 确认按钮...")
 
     try:
         # 1. 确保弹窗完全展开
         dialog = page.locator('div[role="dialog"]').first
         dialog.wait_for(state="visible", timeout=10000)
-        page.wait_for_timeout(800)  # 等待动画稳定
+        page.wait_for_timeout(1000)  # 等待动画完全稳定
 
-        # 2. 第一招：通过专属文案精准定位并点击
-        target_btn = page.locator('button').filter(
-            has_text="Discord Boosted renewal"
-        ).first
+        # 2. 通过浏览器内部 JS 直接寻找包含该文案的按钮并强制触发点击
+        clicked_success = page.evaluate("""
+            () => {
+                // 查找所有按钮
+                const buttons = Array.from(document.querySelectorAll('button'));
+                // 通过特征文案匹配
+                const targetBtn = buttons.find(b => b.textContent && b.textContent.includes('Discord Boosted renewal'));
+                
+                if (!targetBtn) return false;
 
-        if target_btn.count() > 0 and target_btn.is_visible():
-            print("-> [组合拳第一招] 成功通过专属文案锁定按钮，执行点击...")
-            target_btn.click(force=True)
-        else:
-            print("-> [组合拳第一招] 尝试使用模糊文案兜底点击...")
-            fallback_btn = dialog.locator('button').filter(
-                has_text=re.compile(r"Discord Boosted", re.IGNORECASE)
-            ).first
-            fallback_btn.click(force=True)
+                // 移除可能的禁用状态和 pointer-events 限制
+                targetBtn.removeAttribute('disabled');
+                targetBtn.style.pointerEvents = 'auto';
+                targetBtn.style.opacity = '1';
 
-        page.wait_for_timeout(500) # 稍微喘息一下
+                // 派发全套鼠标事件
+                ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(eventType => {
+                    targetBtn.dispatchEvent(new MouseEvent(eventType, {
+                        bubbles: true,
+                        cancelable: true,
+                        view: window,
+                        buttons: 1
+                    }));
+                });
 
-        # 3. 第二招：坐标红点物理补刀点击（双保险）
-        target_x = 640
-        target_y = 590
-        print(f"-> [组合拳第二招] 正在向固定坐标 (X={target_x}, Y={target_y}) 发起物理红点点击补刀...")
-
-        # 渲染调试红点
-        page.evaluate(f"""
-            () => {{
-                const existing = document.getElementById('debug-click-dot');
-                if (existing) existing.remove();
-
-                const dot = document.createElement('div');
-                dot.id = 'debug-click-dot';
-                dot.style.position = 'fixed';
-                dot.style.left = '{target_x}px';
-                dot.style.top = '{target_y}px';
-                dot.style.width = '24px';
-                dot.style.height = '24px';
-                dot.style.backgroundColor = '#ff0000';
-                dot.style.border = '3px solid #ffffff';
-                dot.style.borderRadius = '50%';
-                dot.style.transform = 'translate(-50%, -50%)';
-                dot.style.zIndex = '9999999';
-                dot.style.pointerEvents = 'none';
-                dot.style.boxShadow = '0 0 10px rgba(0,0,0,0.8)';
-                document.body.appendChild(dot);
-            }}
+                // 直接调用原生点击
+                targetBtn.click();
+                return true;
+            }
         """)
-        page.wait_for_timeout(300)
 
-        # 截图发送到 TG 观察效果
+        if clicked_success:
+            print("-> JS 强制穿透点击指令已成功派发到目标按钮")
+        else:
+            print("-> 未能在 DOM 中通过文案找到目标按钮，尝试通过坐标强行点击...")
+            page.mouse.click(640, 590)
+
+        # 3. 截图发送到 TG 观察效果
         debug_screenshot_path = "click_debug.png"
         page.screenshot(path=debug_screenshot_path, full_page=True)
-
-        # 执行物理点击
-        page.mouse.click(target_x, target_y)
-        print("-> 物理红点补刀点击已完成")
-
         send_telegram_message(
-            f"📍 **组合拳点击调试**: 已执行【文案定位】+【坐标 (640, 590) 红点补刀】，请检查弹窗响应！",
+            f"📍 **终极 JS 穿透点击调试**: 已执行 JS 强力点击，请检查弹窗是否触发跳转或关闭！",
             debug_screenshot_path,
         )
 
     except Exception as e:
-        raise RuntimeError(f"组合拳点击 Discord 按钮失败: {e}")
+        raise RuntimeError(f"终极 JS 点击 Discord 按钮失败: {e}")
 
 
 def get_remaining_time(page):
