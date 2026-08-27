@@ -143,41 +143,61 @@ def click_renew_now_robust(page):
 
 
 def click_discord_confirm_robust(page):
-    """使用 Playwright 原生 Locator 进行物理点击，绕过纯 JS 点击无效的问题"""
-    print("-> 正在使用 Playwright 原生 Locator 物理点击 Discord 续期按钮...")
+    """终极遮罩层清除版：先剥离底层遮罩拦截，再执行物理级点击"""
+    print("-> 正在清除背景遮罩拦截并点击 Discord 续期按钮...")
 
     try:
         # 1. 确保弹窗可见
         dialog = page.locator('div[role="dialog"]').first
         dialog.wait_for(state="visible", timeout=10000)
-        page.wait_for_timeout(800)
-
-        # 2. 直接通过 Playwright 内置的文本过滤定位到那个带有 "Discord Boosted renewal" 的按钮
-        target_btn = dialog.locator('button').filter(has_text="Discord Boosted renewal").first
-        
-        if target_btn.count() > 0:
-            print("-> 🎯 Playwright 成功捕获到 Discord 按钮，正在执行物理点击...")
-            # 滚动到可视区域并执行真正的物理点击
-            target_btn.scroll_into_view_if_needed()
-            target_btn.click(force=True)
-        else:
-            print("-> ⚠️ 未能通过 Playwright 捕获到按钮，尝试通过 60 hours 文本定位...")
-            fallback_btn = dialog.locator('button').filter(has_text="60 hours").first
-            fallback_btn.scroll_into_view_if_needed()
-            fallback_btn.click(force=True)
-
         page.wait_for_timeout(500)
+
+        # 2. 暴力破解：通过 JS 移除全屏遮罩的鼠标事件拦截，并精准点击目标按钮
+        clicked_success = page.evaluate("""
+            () => {
+                // 步骤 A：把所有可能挡路的背景遮罩层 pointer-events 设为 none，或者直接移除
+                const backdrops = document.querySelectorAll('div[data-state="open"].fixed.inset-0');
+                backdrops.forEach(b => {
+                    b.style.pointerEvents = 'none';
+                });
+
+                // 步骤 B：寻找 Discord 续期按钮
+                const buttons = Array.from(document.querySelectorAll('div[role="dialog"] button[type="button"]'));
+                const targetBtn = buttons.find(b => {
+                    const text = b.textContent || '';
+                    return text.includes('Discord Boosted renewal') || text.includes('60 hours');
+                });
+
+                if (!targetBtn) return false;
+
+                // 步骤 C：确保按钮本身可以点击
+                targetBtn.removeAttribute('disabled');
+                targetBtn.style.pointerEvents = 'auto';
+
+                // 步骤 D：用原生 click
+                targetBtn.click();
+                return true;
+            }
+        """)
+
+        if clicked_success:
+            print("-> 🎯 已成功清除遮罩并触发 Discord 按钮点击！")
+        else:
+            print("-> ⚠️ 未能找到按钮，执行坐标兜底...")
+            page.mouse.click(640, 590)
+
+        page.wait_for_timeout(800)
 
         # 3. 截图发送到 TG 观察效果
         debug_screenshot_path = "click_debug.png"
         page.screenshot(path=debug_screenshot_path, full_page=True)
         send_telegram_message(
-            f"📍 **Playwright 物理点击调试**: 已执行原生物理点击！",
+            f"📍 **遮罩清除点击调试**: 已执行无遮罩强力点击！",
             debug_screenshot_path,
         )
 
     except Exception as e:
-        raise RuntimeError(f"Playwright 物理点击 Discord 按钮失败: {e}")
+        raise RuntimeError(f"遮罩清除点击失败: {e}")
 
 
 def get_remaining_time(page):
