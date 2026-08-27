@@ -143,8 +143,8 @@ def click_renew_now_robust(page):
 
 
 def click_discord_confirm_robust(page):
-    """精准定位版：通过 HTML 结构中的 Discord Boosted renewal 文本直接锁定并点击按钮"""
-    print("-> 正在通过精确结构寻找 Discord 续期按钮...")
+    """使用 Playwright 原生 Locator 进行物理点击，绕过纯 JS 点击无效的问题"""
+    print("-> 正在使用 Playwright 原生 Locator 物理点击 Discord 续期按钮...")
 
     try:
         # 1. 确保弹窗可见
@@ -152,55 +152,32 @@ def click_discord_confirm_robust(page):
         dialog.wait_for(state="visible", timeout=10000)
         page.wait_for_timeout(800)
 
-        # 2. 通过 JS 在弹窗内部精准寻找包含 "Discord Boosted renewal" 的按钮并强力点击
-        clicked_success = page.evaluate("""
-            () => {
-                // 在对话框内查找所有按钮
-                const buttons = Array.from(document.querySelectorAll('div[role="dialog"] button[type="button"]'));
-                
-                // 寻找包含 "Discord Boosted renewal" 或 "60 hours" 的按钮
-                const targetBtn = buttons.find(b => {
-                    const text = b.textContent || '';
-                    return text.includes('Discord Boosted renewal') || text.includes('60 hours');
-                });
-
-                if (!targetBtn) return false;
-
-                // 移除禁用限制
-                targetBtn.removeAttribute('disabled');
-                targetBtn.style.pointerEvents = 'auto';
-
-                // 派发全套鼠标事件
-                ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(eventType => {
-                    targetBtn.dispatchEvent(new MouseEvent(eventType, {
-                        bubbles: true,
-                        cancelable: true,
-                        view: window,
-                        buttons: 1
-                    }));
-                });
-
-                targetBtn.click();
-                return true;
-            }
-        """)
-
-        if clicked_success:
-            print("-> 🎯 成功精准锁定了 Discord 续期按钮并触发了点击！")
+        # 2. 直接通过 Playwright 内置的文本过滤定位到那个带有 "Discord Boosted renewal" 的按钮
+        target_btn = dialog.locator('button').filter(has_text="Discord Boosted renewal").first
+        
+        if target_btn.count() > 0:
+            print("-> 🎯 Playwright 成功捕获到 Discord 按钮，正在执行物理点击...")
+            # 滚动到可视区域并执行真正的物理点击
+            target_btn.scroll_into_view_if_needed()
+            target_btn.click(force=True)
         else:
-            print("-> ⚠️ 未能命中，执行备用坐标点击 (640, 590)...")
-            page.mouse.click(640, 590)
+            print("-> ⚠️ 未能通过 Playwright 捕获到按钮，尝试通过 60 hours 文本定位...")
+            fallback_btn = dialog.locator('button').filter(has_text="60 hours").first
+            fallback_btn.scroll_into_view_if_needed()
+            fallback_btn.click(force=True)
+
+        page.wait_for_timeout(500)
 
         # 3. 截图发送到 TG 观察效果
         debug_screenshot_path = "click_debug.png"
         page.screenshot(path=debug_screenshot_path, full_page=True)
         send_telegram_message(
-            f"📍 **精准定位点击调试**: 结果 `{clicked_success}`",
+            f"📍 **Playwright 物理点击调试**: 已执行原生物理点击！",
             debug_screenshot_path,
         )
 
     except Exception as e:
-        raise RuntimeError(f"精准定位点击 Discord 按钮失败: {e}")
+        raise RuntimeError(f"Playwright 物理点击 Discord 按钮失败: {e}")
 
 
 def get_remaining_time(page):
