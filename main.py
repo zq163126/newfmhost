@@ -40,7 +40,7 @@ def send_telegram_message(text, photo_path=None):
 
 
 def capture_step(page, step_name, screenshot_path="step_temp.png"):
-    """辅助函数：打日志、截图并即时发送 Telegram 进度"""
+    """辅助函数：打日志, 截图并即时发送 Telegram 进度"""
     print(f"📸 正在捕获过程截图: {step_name}")
     try:
         page.screenshot(path=screenshot_path, full_page=True)
@@ -143,8 +143,8 @@ def click_renew_now_robust(page):
 
 
 def click_discord_confirm_robust(page):
-    """精准文本定位版：通过 Discord Boosted renewal 专属文案锁定并点击按钮"""
-    print("-> 正在通过特征文案寻找并点击 Discord 续期按钮...")
+    """组合拳点击版：特征文案精准定位点击 + 固定坐标物理红点点击双保险"""
+    print("-> 正在执行 Discord 确认按钮的组合拳点击（文案定位 + 坐标补刀）...")
 
     try:
         # 1. 确保弹窗完全展开
@@ -152,33 +152,68 @@ def click_discord_confirm_robust(page):
         dialog.wait_for(state="visible", timeout=10000)
         page.wait_for_timeout(800)  # 等待动画稳定
 
-        # 2. 通过专属文案精准定位这个按钮
+        # 2. 第一招：通过专属文案精准定位并点击
         target_btn = page.locator('button').filter(
             has_text="Discord Boosted renewal"
         ).first
 
         if target_btn.count() > 0 and target_btn.is_visible():
-            print("-> 成功通过专属文案锁定按钮，正在执行点击...")
+            print("-> [组合拳第一招] 成功通过专属文案锁定按钮，执行点击...")
             target_btn.click(force=True)
         else:
-            print("-> 尝试使用模糊文案兜底定位...")
+            print("-> [组合拳第一招] 尝试使用模糊文案兜底点击...")
             fallback_btn = dialog.locator('button').filter(
                 has_text=re.compile(r"Discord Boosted", re.IGNORECASE)
             ).first
             fallback_btn.click(force=True)
 
-        print("-> Discord 按钮元素点击已执行")
+        page.wait_for_timeout(500) # 稍微喘息一下
 
-        # 3. 截图发送到 TG 观察效果
+        # 3. 第二招：坐标红点物理补刀点击（双保险）
+        target_x = 640
+        target_y = 590
+        print(f"-> [组合拳第二招] 正在向固定坐标 (X={target_x}, Y={target_y}) 发起物理红点点击补刀...")
+
+        # 渲染调试红点
+        page.evaluate(f"""
+            () => {{
+                const existing = document.getElementById('debug-click-dot');
+                if (existing) existing.remove();
+
+                const dot = document.createElement('div');
+                dot.id = 'debug-click-dot';
+                dot.style.position = 'fixed';
+                dot.style.left = '{target_x}px';
+                dot.style.top = '{target_y}px';
+                dot.style.width = '24px';
+                dot.style.height = '24px';
+                dot.style.backgroundColor = '#ff0000';
+                dot.style.border = '3px solid #ffffff';
+                dot.style.borderRadius = '50%';
+                dot.style.transform = 'translate(-50%, -50%)';
+                dot.style.zIndex = '9999999';
+                dot.style.pointerEvents = 'none';
+                dot.style.boxShadow = '0 0 10px rgba(0,0,0,0.8)';
+                document.body.appendChild(dot);
+            }}
+        """)
+        page.wait_for_timeout(300)
+
+        # 截图发送到 TG 观察效果
         debug_screenshot_path = "click_debug.png"
         page.screenshot(path=debug_screenshot_path, full_page=True)
+
+        # 执行物理点击
+        page.mouse.click(target_x, target_y)
+        print("-> 物理红点补刀点击已完成")
+
         send_telegram_message(
-            f"📍 **精准文案定位调试**: 已通过特征文案完成点击，请检查弹窗是否触发响应！",
+            f"📍 **组合拳点击调试**: 已执行【文案定位】+【坐标 (640, 590) 红点补刀】，请检查弹窗响应！",
             debug_screenshot_path,
         )
 
     except Exception as e:
-        raise RuntimeError(f"文案定位点击 Discord 按钮失败: {e}")
+        raise RuntimeError(f"组合拳点击 Discord 按钮失败: {e}")
 
 
 def get_remaining_time(page):
@@ -310,11 +345,11 @@ def run():
 
             capture_step(page, "步骤 8: 已完成 Renew now 按钮点击")
 
-            print("9. 正在执行特征文案点击 Discord 续期确认按钮...")
+            print("9. 正在执行组合拳点击 Discord 续期确认按钮...")
             click_discord_confirm_robust(page)
 
-            print("10. 等待后端处理续期并刷新数据（延长至 8 秒）...")
-            page.wait_for_timeout(8000)  # 延长等待时间，确保后端处理完毕并刷新页面
+            print("10. 等待后端处理续期并刷新数据（保持 8 秒延时）...")
+            page.wait_for_timeout(8000)  # 确保后端处理完毕并刷新页面
             # dismiss_ads(page)
             capture_step(page, "步骤 10: 续期等待完成，准备读取最新时间")
 
