@@ -143,8 +143,8 @@ def click_renew_now_robust(page):
 
 
 def click_discord_confirm_robust(page):
-    """纯净调试版：绝对不调用任何清理函数，直接画红点截图，排查弹窗消失原因"""
-    print("-> 正在执行纯净坐标调试（不清理广告、不执行点击）...")
+    """正式点击版：在固定坐标处执行物理点击并截图验证"""
+    print("-> 正在执行固定坐标点击 Discord 续期确认按钮...")
 
     # ==========================================
     # 📌 你的测试坐标 (1280x800 分辨率)
@@ -155,7 +155,7 @@ def click_discord_confirm_robust(page):
     print(f"-> 正在渲染调试红点坐标: X={target_x}, Y={target_y}")
 
     try:
-        # 直接通过网页 DOM 注入一个红色圆点（不破坏、不点击任何东西）
+        # 直接通过网页 DOM 注入一个红色圆点
         page.evaluate(f"""
             () => {{
                 const existing = document.getElementById('debug-click-dot');
@@ -179,20 +179,21 @@ def click_discord_confirm_robust(page):
             }}
         """)
 
-        # 立即截图发送（注意：这里不调用 dismiss_ads）
+        # 截图发送并执行物理点击
         debug_screenshot_path = "click_debug.png"
         page.screenshot(path=debug_screenshot_path, full_page=True)
+        
+        # 执行物理点击
         page.mouse.click(target_x, target_y)
         print("-> 物理点击动作已执行完成")
+
         send_telegram_message(
-            f"📍 **纯净红点调试**: 当前测试坐标 `({target_x}, {target_y})`\n这次没有任何多余动作，看看弹窗还在不在！",
+            f"📍 **点击调试截图**: 当前测试坐标 `({target_x}, {target_y})`\n已执行物理点击，请检查弹窗是否成功响应！",
             debug_screenshot_path,
         )
 
-        print("-> 纯净红点已渲染并截图发送")
-
     except Exception as e:
-        raise RuntimeError(f"纯净调试红点绘制失败: {e}")
+        raise RuntimeError(f"点击 Discord 续期确认按钮失败: {e}")
 
 
 def get_remaining_time(page):
