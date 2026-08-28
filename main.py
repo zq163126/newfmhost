@@ -143,66 +143,60 @@ def click_renew_now_robust(page):
     """)
 
 
+import json
+import time
+
 def click_discord_confirm_robust(page):
-    """终极逃逸版：绕过前端 isTrusted 限制的底层方法"""
-    print("-> 正在执行 Discord 按钮的终极逃逸点击...")
+    """Radix UI 专用精准卡片按钮点击版"""
+    print("-> 正在执行 Discord 续期卡片按钮的精准打击...")
 
     try:
-        # 1. 确保弹窗可见并稳定
+        # 1. 确保弹窗可见并完全渲染
         dialog = page.locator('div[role="dialog"]').first
         dialog.wait_for(state="visible", timeout=10000)
-        page.wait_for_timeout(1000)
+        page.wait_for_timeout(1000) # 给 Radix UI 留出挂载动画和事件绑定时间
 
-        # 2. 通过 JS 寻找按钮并尝试直接调用其绑定的事件或 Framework 内部方法
-        # 很多 Vue/React 框架的按钮，其核心逻辑写在特定的闭包或 Vue 实例中
-        click_result = page.evaluate("""
-            () => {
-                const buttons = Array.from(document.querySelectorAll('div[role="dialog"] button[type="button"]'));
-                const targetBtn = buttons.find(b => {
-                    const text = b.textContent || '';
-                    return text.includes('Discord Boosted renewal');
+        # 2. 通过更精准的定位器：寻找整个弹窗中包含 "Discord Boosted renewal" 文字的那个 button 元素
+        target_btn_locator = page.locator('div[role="dialog"] button').filter(has_text="Discord Boosted renewal").first
+        
+        # 确保元素可见并在视口内
+        target_btn_locator.wait_for(state="visible", timeout=5000)
+        target_btn_locator.scroll_into_view_if_needed()
+        page.wait_for_timeout(300)
+
+        # 3. 通过 JS 加上显眼的红黄高亮，并在 DOM 层面直接触发点击和 React 事件
+        clicked_ok = page.evaluate("""
+            (btn) => {
+                if (!btn) return false;
+                
+                // 加上红黄高亮，方便从截图核实
+                btn.style.border = '4px solid #ff0000';
+                btn.style.backgroundColor = '#ffff00';
+                btn.style.boxShadow = '0 0 20px #ff0000';
+
+                // 强制触发原生点击事件及冒泡
+                const clickEvent = new MouseEvent('click', {
+                    bubbles: true,
+                    cancelable: true,
+                    view: window,
+                    buttons: 1
                 });
-
-                if (!targetBtn) return { success: false, reason: 'button_not_found' };
-
-                // 高亮标记
-                targetBtn.style.border = '4px solid #ff0000';
-                targetBtn.style.backgroundColor = '#ffff00';
-
-                // 方法 A：尝试直接触发原生的 click，但加上欺骗性的 isTrusted 模拟（部分旧框架有效）
-                try {
-                    // 很多时候，按钮内部的真正触发点是一个特定的子元素或 React 绑定属性
-                    // 我们直接寻找它身上的 __reactProps$ 或 __vueVNode$ 等内部属性来调用回调
-                    let key = Object.keys(targetBtn).find(k => k.startsWith('__reactEventHandlers$') || k.startsWith('__reactProps$') || k.startsWith('__vue'));
-                    
-                    if (key && targetBtn[key] && typeof targetBtn[key].onClick === 'function') {
-                        targetBtn[key].onClick({
-                            isTrusted: true,
-                            preventDefault: () => {},
-                            stopPropagation: () => {},
-                            target: targetBtn,
-                            currentTarget: targetBtn
-                        });
-                        return { success: true, method: 'react_props_onclick' };
-                    }
-                } catch (e) {
-                    console.log('React internal call failed:', e);
-                }
-
-                // 方法 B：如果找不到内部框架属性，使用最极端的强行表单提交或点击
-                targetBtn.click();
-                return { success: true, method: 'native_dom_click' };
+                btn.dispatchEvent(clickEvent);
+                
+                // 同时调用标准 click()
+                btn.click();
+                return true;
             }
-        """)
+        """, target_btn_locator.element_handle())
 
-        print(f"-> 🔍 逃逸点击执行结果: {click_result}")
+        print(f"-> 🔍 按钮定位与 JS 点击触发状态: {clicked_ok}")
 
-        # 3. 截图留存并发送 TG
+        # 4. 截取带有高亮标记的画面发到 TG 供核查
         debug_screenshot_path = "click_debug.png"
         page.screenshot(path=debug_screenshot_path, full_page=True)
         
         send_telegram_message(
-            f"📍 **逃逸点击诊断**: 方式 `({click_result.get('method')})` 已执行",
+            "📍 **Discord 续期按钮已精准锁定并触发**（Radix UI 卡片模式）",
             debug_screenshot_path,
         )
 
