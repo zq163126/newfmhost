@@ -143,8 +143,11 @@ def click_renew_now_robust(page):
     """)
 
 
+import json
+import time
+
 def click_discord_confirm_robust(page):
-    """已验证的高亮诊断点击版：高亮显示并使用 Playwright Locator 原生物理点击"""
+    """已验证的高亮诊断点击版：完全模拟人工移动鼠标到元素坐标并物理点击"""
     print("-> 正在执行已验证的 Discord 按钮高亮与物理点击...")
 
     try:
@@ -189,14 +192,36 @@ def click_discord_confirm_robust(page):
         )
 
         if debug_info['found']:
-            # 4. 使用 Playwright 原生 Locator 进行精确物理点击（模拟真实人类点击事件）
-            print("-> 正在对高亮元素执行 Playwright 原生物理点击...")
+            # 4. 模拟真实人工鼠标移动到按钮中心并点击
+            print("-> 正在对高亮元素执行模拟人工轨迹的鼠标移动与点击...")
             target_btn_locator = page.locator('div[role="dialog"] button[type="button"]').filter(has_text="Discord Boosted renewal").first
             target_btn_locator.scroll_into_view_if_needed()
             
-            # 多次触发物理点击确保触发 React/Vue 事件监听
-            target_btn_locator.click(force=True)
-            print("-> 物理点击指令已送达")
+            # 获取按钮在页面中的位置尺寸信息
+            box = target_btn_locator.bounding_box()
+            if box:
+                # 计算按钮中心点坐标
+                center_x = box["x"] + box["width"] / 2
+                center_y = box["y"] + box["height"] / 2
+                
+                print(f"-> 目标按钮中心坐标: X={center_x}, Y={center_y}")
+                
+                # 模拟从当前鼠标位置（或一个初始位置）平滑移动到按钮中心
+                # steps 参数可以控制移动的平滑度（步数越多越像人类滑动）
+                page.mouse.move(center_x, center_y, steps=25)
+                page.wait_for_timeout(200) # 模拟人类悬停/反应时间
+                
+                # 模拟按下并释放鼠标左键
+                page.mouse.down()
+                page.wait_for_timeout(100) # 模拟按下持续时间
+                page.mouse.up()
+                
+                print("-> 模拟人工鼠标点击动作已完成")
+            else:
+                # 如果获取不到 bounding_box，则回退到原来的点击方式
+                print("-> ⚠️ 无法获取元素的 bounding_box，回退到普通 force 点击")
+                target_btn_locator.click(force=True)
+                print("-> 物理点击指令已送达")
         else:
             raise RuntimeError("未能在弹窗中找到 Discord Boosted renewal 按钮")
 
