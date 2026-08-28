@@ -144,52 +144,65 @@ def click_renew_now_robust(page):
 
 
 def click_discord_confirm_robust(page):
-    """最终稳定版：优雅等待前端状态同步并执行精准物理点击"""
-    print("-> 正在执行 Discord 按钮安全稳定点击...")
+    """终极逃逸版：绕过前端 isTrusted 限制的底层方法"""
+    print("-> 正在执行 Discord 按钮的终极逃逸点击...")
 
     try:
-        # 1. 确保弹窗完全加载且稳定（给前端虚拟 DOM 绑定事件留足时间）
+        # 1. 确保弹窗可见并稳定
         dialog = page.locator('div[role="dialog"]').first
         dialog.wait_for(state="visible", timeout=10000)
-        
-        # 关键：给前端动态绑定的 JS 框架事件留出 1.5 秒的渲染与事件绑定期
-        page.wait_for_timeout(1500)
+        page.wait_for_timeout(1000)
 
-        # 2. 定位目标按钮
-        target_btn_locator = page.locator('div[role="dialog"] button[type="button"]').filter(has_text="Discord Boosted renewal").first
-        
-        # 确保按钮在视口内
-        target_btn_locator.scroll_into_view_if_needed()
-        page.wait_for_timeout(300)
+        # 2. 通过 JS 寻找按钮并尝试直接调用其绑定的事件或 Framework 内部方法
+        # 很多 Vue/React 框架的按钮，其核心逻辑写在特定的闭包或 Vue 实例中
+        click_result = page.evaluate("""
+            () => {
+                const buttons = Array.from(document.querySelectorAll('div[role="dialog"] button[type="button"]'));
+                const targetBtn = buttons.find(b => {
+                    const text = b.textContent || '';
+                    return text.includes('Discord Boosted renewal');
+                });
 
-        # 3. 获取按钮中心坐标，模拟真人极其自然的鼠标移入、按下、抬起
-        box = target_btn_locator.bounding_box()
-        if box:
-            center_x = box["x"] + box["width"] / 2
-            center_y = box["y"] + box["height"] / 2
-            
-            print(f"-> 目标按钮中心坐标: X={center_x}, Y={center_y}")
-            
-            # 平滑移动鼠标到按钮上
-            page.mouse.move(center_x, center_y, steps=15)
-            page.wait_for_timeout(200) # 悬停一下
-            
-            # 物理点击
-            page.mouse.down()
-            page.wait_for_timeout(120)
-            page.mouse.up()
-            print("-> 鼠标物理点击动作已完整执行")
-        else:
-            # 如果获取不到坐标，直接用 Playwright 原生安全点击
-            print("-> ⚠️ 未能获取 bounding_box，使用原生 click()")
-            target_btn_locator.click(timeout=5000)
+                if (!targetBtn) return { success: false, reason: 'button_not_found' };
 
-        # 4. 截图留存并通知
+                // 高亮标记
+                targetBtn.style.border = '4px solid #ff0000';
+                targetBtn.style.backgroundColor = '#ffff00';
+
+                // 方法 A：尝试直接触发原生的 click，但加上欺骗性的 isTrusted 模拟（部分旧框架有效）
+                try {
+                    // 很多时候，按钮内部的真正触发点是一个特定的子元素或 React 绑定属性
+                    // 我们直接寻找它身上的 __reactProps$ 或 __vueVNode$ 等内部属性来调用回调
+                    let key = Object.keys(targetBtn).find(k => k.startsWith('__reactEventHandlers$') || k.startsWith('__reactProps$') || k.startsWith('__vue'));
+                    
+                    if (key && targetBtn[key] && typeof targetBtn[key].onClick === 'function') {
+                        targetBtn[key].onClick({
+                            isTrusted: true,
+                            preventDefault: () => {},
+                            stopPropagation: () => {},
+                            target: targetBtn,
+                            currentTarget: targetBtn
+                        });
+                        return { success: true, method: 'react_props_onclick' };
+                    }
+                } catch (e) {
+                    console.log('React internal call failed:', e);
+                }
+
+                // 方法 B：如果找不到内部框架属性，使用最极端的强行表单提交或点击
+                targetBtn.click();
+                return { success: true, method: 'native_dom_click' };
+            }
+        """)
+
+        print(f"-> 🔍 逃逸点击执行结果: {click_result}")
+
+        # 3. 截图留存并发送 TG
         debug_screenshot_path = "click_debug.png"
         page.screenshot(path=debug_screenshot_path, full_page=True)
         
         send_telegram_message(
-            "📍 **Discord 续期点击指令已发出**（已等待框架完全同步）",
+            f"📍 **逃逸点击诊断**: 方式 `({click_result.get('method')})` 已执行",
             debug_screenshot_path,
         )
 
