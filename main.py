@@ -356,7 +356,7 @@ def run():
 
             print("10. 等待后端处理续期并刷新数据（保持 8 秒延时）...")
             page.wait_for_timeout(8000)  # 确保后端处理完毕并刷新页面
-            dismiss_ads(page)
+            # dismiss_ads(page)
             capture_step(page, "步骤 10: 续期等待完成，准备读取最新时间")
 
             print("11. 正在获取 Renew 操作后的时间...")
