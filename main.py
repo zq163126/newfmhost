@@ -69,6 +69,32 @@ def dismiss_ads(page):
     except Exception:
         pass
 
+    js_close_script = """
+    () => {
+        const closeIcons = Array.from(document.querySelectorAll('svg.lucide-x, #dismiss-button'));
+        for (const icon of closeIcons) {
+            const btn = icon.closest('button') || icon;
+            if (btn && typeof btn.click === 'function') {
+                btn.click();
+            }
+        }
+        const srCloses = Array.from(document.querySelectorAll('span.sr-only'));
+        for (const span of srCloses) {
+            if (span.textContent.trim() === 'Close') {
+                const btn = span.closest('button');
+                if (btn) btn.click();
+            }
+        }
+    }
+    """
+
+    frames = [page] + page.frames
+    for frame in frames:
+        try:
+            frame.evaluate(js_close_script)
+        except Exception:
+            pass
+
 
 def wait_and_click(page, locator, max_attempts=10):
     """等待并强制点击元素"""
@@ -78,10 +104,9 @@ def wait_and_click(page, locator, max_attempts=10):
         try:
             locator.first.click(force=True, timeout=1500)
             print(f"-> 成功点击目标元素（第 {attempt + 1} 次尝试）")
-            time.sleep(4)  # 严格 4 秒延时
             return True
         except Exception:
-            time.sleep(1)
+            page.wait_for_timeout(1000)
 
     raise RuntimeError(
         f"未能成功点击目标元素 ({locator})，当前页面 URL: {page.url}"
@@ -89,7 +114,7 @@ def wait_and_click(page, locator, max_attempts=10):
 
 
 def click_renew_now_robust(page):
-    """全方位穿透式点击 Renew now 按钮，附带严格延时"""
+    """全方位穿透式点击 Renew now 按钮"""
     dismiss_ads(page)
     print("-> 正在强力触发 Renew now...")
 
@@ -116,84 +141,67 @@ def click_renew_now_robust(page):
             }
         }
     """)
-    time.sleep(4)  # 点击后严格延时 4 秒等待弹窗完全展开
 
 
 def click_discord_confirm_robust(page):
-    """最终深度穿透版：绕过 Playwright 坐标点击限制，直接在浏览器内部用 JS 激活 React 事件"""
-    print("-> 正在执行深度 JS 事件链穿透点击...")
+    """已验证的高亮诊断点击版：高亮显示并使用 Playwright Locator 原生物理点击"""
+    print("-> 正在执行已验证的 Discord 按钮高亮与物理点击...")
 
     try:
         # 1. 确保弹窗可见
         dialog = page.locator('div[role="dialog"]').first
         dialog.wait_for(state="visible", timeout=10000)
-        time.sleep(2)
+        page.wait_for_timeout(800)
 
-        # 2. 在浏览器内部直接用 JavaScript 精准定位并深度触发
-        clicked_success = page.evaluate("""() => {
-            // 寻找弹窗内的所有按钮
-            const dialogs = document.querySelectorAll('div[role="dialog"]');
-            if (dialogs.length === 0) return false;
-            
-            // 取最顶层的弹窗
-            const currentDialog = dialogs[dialogs.length - 1];
-            const buttons = currentDialog.querySelectorAll('button');
-            
-            // 如果按钮数量足够，取索引为 2 的按钮；如果不够，取最后一个或包含 Discord 的按钮
-            let targetBtn = null;
-            if (buttons.length > 2) {
-                targetBtn = buttons[2];
-            } else if (buttons.length > 0) {
-                targetBtn = buttons[buttons.length - 1];
-            }
-            
-            if (!targetBtn) return false;
+        # 2. 通过 JS 加上红黄高亮，供我们从截图直观检查
+        debug_info = page.evaluate("""
+            () => {
+                const buttons = Array.from(document.querySelectorAll('div[role="dialog"] button[type="button"]'));
+                const allTexts = buttons.map((b, i) => `[${i}] -> ${b.textContent.trim().replace(/\\s+/g, ' ')}`);
 
-            // 强制解除所有可能的禁用和拦截属性
-            targetBtn.removeAttribute('disabled');
-            targetBtn.style.pointerEvents = 'auto';
-            targetBtn.style.display = 'block';
-
-            // 模拟完整的用户真实交互事件链（针对 React / Radix UI 深度优化）
-            const events = ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click', 'input', 'change'];
-            events.forEach(eventName => {
-                const event = new MouseEvent(eventName, {
-                    view: window,
-                    bubbles: true,
-                    cancelable: true,
-                    buttons: 1,
-                    clientX: targetBtn.getBoundingClientRect().x + 10,
-                    clientY: targetBtn.getBoundingClientRect().y + 10
+                const targetBtn = buttons.find(b => {
+                    const text = b.textContent || '';
+                    return text.includes('Discord Boosted renewal');
                 });
-                targetBtn.dispatchEvent(event);
-            });
 
-            // 尝试直接调用其可能存在的 onclick 或 React 绑定的内部方法
-            if (typeof targetBtn.click === 'function') {
-                targetBtn.click();
+                if (!targetBtn) return { found: false, allTexts: allTexts };
+
+                // 加上红黄高亮框
+                targetBtn.style.border = '4px solid #ff0000';
+                targetBtn.style.backgroundColor = '#ffff00';
+                targetBtn.style.boxShadow = '0 0 20px #ff0000';
+
+                return { found: true, allTexts: allTexts, matchedText: targetBtn.textContent.trim() };
             }
+        """)
 
-            return true;
-        }""")
+        print(f"-> 🔍 元素核验结果: {debug_info['found']}")
 
-        if not clicked_success:
-            raise RuntimeError("JS 未能在弹窗中找到对应的按钮元素")
-
-        print("-> 深度 JS 穿透点击执行完毕")
-        
-        # 3. 严格延时 4 秒，等待后端接收请求
-        time.sleep(4)
-
-        # 4. 截图保存查看效果
+        # 3. 截取带有高亮标记的画面发到 TG
         debug_screenshot_path = "click_debug.png"
         page.screenshot(path=debug_screenshot_path, full_page=True)
+        
         send_telegram_message(
-            f"📍 **JS 穿透点击调试**: 已完成执行！",
+            f"📍 **按钮定位已锁定**:\n"
+            f"🎯 状态: `成功锁定 Discord 续期按钮`\n"
+            f"📋 按钮列表:\n```\n{json.dumps(debug_info.get('allTexts', []), indent=2, ensure_ascii=False)}```",
             debug_screenshot_path,
         )
 
+        if debug_info['found']:
+            # 4. 使用 Playwright 原生 Locator 进行精确物理点击（模拟真实人类点击事件）
+            print("-> 正在对高亮元素执行 Playwright 原生物理点击...")
+            target_btn_locator = page.locator('div[role="dialog"] button[type="button"]').filter(has_text="Discord Boosted renewal").first
+            target_btn_locator.scroll_into_view_if_needed()
+            
+            # 多次触发物理点击确保触发 React/Vue 事件监听
+            target_btn_locator.click(force=True)
+            print("-> 物理点击指令已送达")
+        else:
+            raise RuntimeError("未能在弹窗中找到 Discord Boosted renewal 按钮")
+
     except Exception as e:
-        raise RuntimeError(f"强制点击失败: {e}")
+        raise RuntimeError(f"点击 Discord 按钮失败: {e}")
 
 
 def get_remaining_time(page):
@@ -250,14 +258,11 @@ def run():
         try:
             print("1. 正在访问登录页面...")
             page.goto("https://freemchost.com/login", wait_until="networkidle")
-            time.sleep(4)
             dismiss_ads(page)
 
             print("2. 正在输入凭据...")
             page.locator("#email").fill(EMAIL)
-            time.sleep(1)
             page.locator("#password").fill(PASSWORD)
-            time.sleep(1)
 
             print("3. 点击 Sign in...")
             signin_btn = page.locator(
@@ -270,7 +275,6 @@ def run():
                 page.wait_for_url(
                     "**/app**", timeout=15000, wait_until="networkidle"
                 )
-                time.sleep(4)
                 print(f"-> 成功检测到后台特征 URL，当前位置: {page.url}")
             except Exception:
                 raise RuntimeError(
@@ -282,22 +286,22 @@ def run():
                 "https://freemchost.com/app/servers/2f12a6bd-a1c1-4cc1-bd32-8becf1925680",
                 wait_until="networkidle",
             )
-            time.sleep(4)
+            page.wait_for_timeout(2000)
             dismiss_ads(page)
             capture_step(page, "步骤 5: 已跳转到目标服务器页面")
 
-            print("6. 正在寻找并点击 Manage 标签页...")
+            print("6. 正在寻找并点击 Manage 标签页（共点击 2 次，间隔 2 秒）...")
             manage_tab = page.locator(
                 'button[role="tab"]:has-text("Manage"), button:has-text("Manage")'
             )
 
             print("-> 第一次点击 Manage...")
             wait_and_click(page, manage_tab, max_attempts=12)
-            time.sleep(4)
+            page.wait_for_timeout(2000)
 
             print("-> 第二次点击 Manage...")
             wait_and_click(page, manage_tab, max_attempts=12)
-            time.sleep(4)
+            page.wait_for_timeout(2000)
 
             capture_step(page, "步骤 6: 已完成 2 次 Manage 标签页点击")
 
@@ -325,16 +329,16 @@ def run():
 
             print("8. 剩余时间小于等于 36 小时，正在执行 Renew now 全套事件派发点击...")
             click_renew_now_robust(page)
-            time.sleep(4)
+            page.wait_for_timeout(3000)
 
             capture_step(page, "步骤 8: 已完成 Renew now 按钮点击")
 
-            print("9. 正在执行严格缓冲的真人轨迹点击 Discord 续期确认按钮...")
+            print("9. 正在执行已验证的高亮定位与物理点击...")
             click_discord_confirm_robust(page)
 
             print("10. 等待后端处理续期并刷新数据（保持 8 秒延时）...")
-            time.sleep(8)  # 确保后端处理完毕并刷新页面
-            dismiss_ads(page)
+            page.wait_for_timeout(8000)  # 确保后端处理完毕并刷新页面
+           # dismiss_ads(page)
             capture_step(page, "步骤 10: 续期等待完成，准备读取最新时间")
 
             print("11. 正在获取 Renew 操作后的时间...")
@@ -343,7 +347,7 @@ def run():
             print(
                 f"-> 续期后时间: {time_after} (折合 {total_hours_after} 小时)"
             )
-            capture_step(page, "步骤 11: 续期结束，最新时间: {time_after}")
+            capture_step(page, f"步骤 11: 续期结束，最新时间: {time_after}")
 
             page.screenshot(path=screenshot_path, full_page=True)
 
