@@ -143,104 +143,58 @@ def click_renew_now_robust(page):
     """)
 
 
-import json
-import time
-
-import json
-import time
-
 def click_discord_confirm_robust(page):
-    """联合隐藏 Input 校验的终极点击版"""
-    print("-> 正在执行联动隐藏输入框的 Discord 按钮点击...")
+    """最终稳定版：优雅等待前端状态同步并执行精准物理点击"""
+    print("-> 正在执行 Discord 按钮安全稳定点击...")
 
     try:
-        # 1. 确保弹窗可见
+        # 1. 确保弹窗完全加载且稳定（给前端虚拟 DOM 绑定事件留足时间）
         dialog = page.locator('div[role="dialog"]').first
         dialog.wait_for(state="visible", timeout=10000)
-        page.wait_for_timeout(800)
+        
+        # 关键：给前端动态绑定的 JS 框架事件留出 1.5 秒的渲染与事件绑定期
+        page.wait_for_timeout(1500)
 
-        # 2. 通过 JS 同时处理隐藏输入框和目标按钮
-        debug_info = page.evaluate("""
-            () => {
-                const buttons = Array.from(document.querySelectorAll('div[role="dialog"] button[type="button"]'));
-                const allTexts = buttons.map((b, i) => `[${i}] -> ${b.textContent.trim().replace(/\\s+/g, ' ')}`);
+        # 2. 定位目标按钮
+        target_btn_locator = page.locator('div[role="dialog"] button[type="button"]').filter(has_text="Discord Boosted renewal").first
+        
+        # 确保按钮在视口内
+        target_btn_locator.scroll_into_view_if_needed()
+        page.wait_for_timeout(300)
 
-                const targetBtn = buttons.find(b => {
-                    const text = b.textContent || '';
-                    return text.includes('Discord Boosted renewal');
-                });
+        # 3. 获取按钮中心坐标，模拟真人极其自然的鼠标移入、按下、抬起
+        box = target_btn_locator.bounding_box()
+        if box:
+            center_x = box["x"] + box["width"] / 2
+            center_y = box["y"] + box["height"] / 2
+            
+            print(f"-> 目标按钮中心坐标: X={center_x}, Y={center_y}")
+            
+            # 平滑移动鼠标到按钮上
+            page.mouse.move(center_x, center_y, steps=15)
+            page.wait_for_timeout(200) # 悬停一下
+            
+            # 物理点击
+            page.mouse.down()
+            page.wait_for_timeout(120)
+            page.mouse.up()
+            print("-> 鼠标物理点击动作已完整执行")
+        else:
+            # 如果获取不到坐标，直接用 Playwright 原生安全点击
+            print("-> ⚠️ 未能获取 bounding_box，使用原生 click()")
+            target_btn_locator.click(timeout=5000)
 
-                if (!targetBtn) return { found: false, allTexts: allTexts };
-
-                // 加上红黄高亮框
-                targetBtn.style.border = '4px solid #ff0000';
-                targetBtn.style.backgroundColor = '#ffff00';
-                targetBtn.style.boxShadow = '0 0 20px #ff0000';
-                targetBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
-
-                // 关键点：检查并处理对应的隐藏输入框 (name="renew_confirm_code")
-                const hiddenInput = document.querySelector('input[name="renew_confirm_code"]');
-                if (hiddenInput) {
-                    hiddenInput.focus();
-                    // 模拟可能需要的值或触发事件
-                    hiddenInput.dispatchEvent(new Event('focus', { bubbles: true }));
-                    hiddenInput.dispatchEvent(new Event('input', { bubbles: true }));
-                    hiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
-                }
-
-                try {
-                    targetBtn.focus();
-                    
-                    // 触发标准的鼠标点击事件序列
-                    ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(eventType => {
-                        const evt = new PointerEvent(eventType, {
-                            bubbles: true,
-                            cancelable: true,
-                            view: window,
-                            button: 0,
-                            buttons: 1,
-                            pointerId: 1,
-                            pointerType: 'mouse',
-                            isPrimary: true
-                        });
-                        targetBtn.dispatchEvent(evt);
-                    });
-                    
-                    targetBtn.click();
-                    
-                    return { 
-                        found: true, 
-                        allTexts: allTexts, 
-                        hasHiddenInput: !!hiddenInput,
-                        success: true 
-                    };
-                } catch (err) {
-                    return { found: true, allTexts: allTexts, success: false, error: err.toString() };
-                }
-            }
-        """)
-
-        print(f"-> 🔍 联动触发结果: {debug_info}")
-
-        # 3. 截取带有高亮标记的画面发到 TG
+        # 4. 截图留存并通知
         debug_screenshot_path = "click_debug.png"
         page.screenshot(path=debug_screenshot_path, full_page=True)
         
         send_telegram_message(
-            f"📍 **联动隐藏 Input 触发诊断**:\n"
-            f"🎯 状态: `已处理隐藏输入框并触发点击`\n"
-            f"📋 按钮列表:\n```\n{json.dumps(debug_info.get('allTexts', []), indent=2, ensure_ascii=False)}```",
+            "📍 **Discord 续期点击指令已发出**（已等待框架完全同步）",
             debug_screenshot_path,
         )
 
-        if not debug_info['found']:
-            raise RuntimeError("未能在弹窗中找到 Discord Boosted renewal 按钮")
-            
-        print("-> 🚀 联动触发指令已下达，等待后端响应...")
-
     except Exception as e:
         raise RuntimeError(f"点击 Discord 按钮失败: {e}")
-
 
 def get_remaining_time(page):
     """获取当前的剩余续期时间"""
