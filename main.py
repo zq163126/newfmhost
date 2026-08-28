@@ -119,62 +119,70 @@ def click_renew_now_robust(page):
     time.sleep(4)  # 点击后严格延时 4 秒等待弹窗完全展开
 
 
+import time
+import random
+import re
+
 def click_discord_confirm_robust(page):
-    """完美拟真鼠标轨迹版：加入严格的 4 秒前后缓冲延时"""
-    print("-> 正在执行严格缓冲的真人鼠标轨迹点击...")
+    """终极修复版：通过 JS 强制触发事件链与 Playwright force 点击结合"""
+    print("-> 正在执行深度强制点击逻辑...")
 
     try:
         # 1. 确保弹窗可见并稳定
         dialog = page.locator('div[role="dialog"]').first
         dialog.wait_for(state="visible", timeout=10000)
-        time.sleep(4)  # 弹窗展开后强制等待 4 秒，确保动画和事件绑定完全就绪
+        time.sleep(2)  # 适当缓冲
 
-        # 2. 定位到索引 [2] 的那个 Discord 按钮并获取坐标
+        # 2. 定位到索引 [2] 的那个 Discord 按钮
         target_btn = page.locator('div[role="dialog"] button').nth(2)
         target_btn.scroll_into_view_if_needed()
         time.sleep(1)
 
-        box = target_btn.bounding_box()
-        if not box:
-            raise RuntimeError("未能获取到 Discord 按钮的坐标信息")
+        # 3. 检查按钮是否被禁用
+        is_disabled = target_btn.get_attribute("disabled")
+        if is_disabled is not None:
+            print("-> 警告: 目标按钮当前处于 disabled 状态！")
 
-        target_x = box["x"] + box["width"] / 2
-        target_y = box["y"] + box["height"] / 2
+        print("-> 正在通过组合拳触发点击（Playwright force 点击 + JS 派发事件）...")
 
-        print(f"-> 目标按钮中心坐标: X={target_x}, Y={target_y}")
+        # 方法 A：使用 Playwright 自带的 force=True 穿透一切遮罩
+        try:
+            target_btn.click(force=True, timeout=5000)
+        except Exception as e:
+            print(f"-> Playwright 原生 force 点击遇到异常: {e}，尝试备用 JS 触发...")
 
-        # 3. 模拟人类习惯：鼠标先从页面上方的随机空白处出发
-        start_x = random.randint(100, 300)
-        start_y = random.randint(50, 150)
-        page.mouse.move(start_x, start_y)
-        time.sleep(1)
+        # 方法 B：直接用 JavaScript 在该元素上模拟完整的用户点击事件链（针对 React 专门优化）
+        page.evaluate("""(btn) => {
+            if (!btn) return;
+            // 依次触发 mousedown, mouseup, click 事件，满足 React 监听
+            const mouseEvents = ['mousedown', 'mouseup', 'click'];
+            mouseEvents.forEach(eventType => {
+                const event = new MouseEvent(eventType, {
+                    view: window,
+                    bubbles: true,
+                    cancelable: true,
+                    buttons: 1
+                });
+                btn.dispatchEvent(event);
+            });
+        """, target_btn.element_handle())
 
-        print(f"-> 模拟鼠标从 ({start_x}, {start_y}) 出发，平滑移动到目标按钮...")
-
-        # 4. 密集平滑移动轨迹
-        page.mouse.move(target_x, target_y, steps=25)
-        time.sleep(1)  # 悬停停顿 1 秒
-
-        # 5. 执行物理按下与释放
-        page.mouse.down(button="left")
-        time.sleep(0.3)
-        page.mouse.up(button="left")
-
-        print("-> 真人轨迹物理点击动作已完成")
+        print("-> 强制点击组合拳已执行完毕")
         
-        # 6. 点击后严格延时 4 秒，等待后端接收请求
+        # 4. 点击后严格延时 4 秒，等待后端接收请求
         time.sleep(4)
 
-        # 7. 截图发送到 TG 观察效果
+        # 5. 截图发送到 TG 观察效果
         debug_screenshot_path = "click_debug.png"
         page.screenshot(path=debug_screenshot_path, full_page=True)
-        send_telegram_message(
-            f"📍 **4秒缓冲轨迹点击调试**: 已完成滑动点击并等待响应！",
-            debug_screenshot_path,
-        )
+        # 假设 send_telegram_message 在你本地已定义
+        # send_telegram_message(
+        #     f"📍 **终极强制点击调试**: 已完成点击并等待响应！",
+        #     debug_screenshot_path,
+        # )
 
     except Exception as e:
-        raise RuntimeError(f"真人轨迹点击失败: {e}")
+        raise RuntimeError(f"强制点击失败: {e}")
 
 
 def get_remaining_time(page):
