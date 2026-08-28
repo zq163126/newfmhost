@@ -146,9 +146,12 @@ def click_renew_now_robust(page):
 import json
 import time
 
+import json
+import time
+
 def click_discord_confirm_robust(page):
-    """终极诊断与多维强制触发版"""
-    print("-> 正在执行 Discord 按钮终极强制触发...")
+    """联合隐藏 Input 校验的终极点击版"""
+    print("-> 正在执行联动隐藏输入框的 Discord 按钮点击...")
 
     try:
         # 1. 确保弹窗可见
@@ -156,7 +159,7 @@ def click_discord_confirm_robust(page):
         dialog.wait_for(state="visible", timeout=10000)
         page.wait_for_timeout(800)
 
-        # 2. 通过 JS 进行红黄高亮，并直接在 DOM 元素上深度触发全套点击事件
+        # 2. 通过 JS 同时处理隐藏输入框和目标按钮
         debug_info = page.evaluate("""
             () => {
                 const buttons = Array.from(document.querySelectorAll('div[role="dialog"] button[type="button"]'));
@@ -175,40 +178,57 @@ def click_discord_confirm_robust(page):
                 targetBtn.style.boxShadow = '0 0 20px #ff0000';
                 targetBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
-                // 核心大招：直接在 JS 层面分发标准鼠标事件序列（能绕过绝大多数前端框架限制）
+                // 关键点：检查并处理对应的隐藏输入框 (name="renew_confirm_code")
+                const hiddenInput = document.querySelector('input[name="renew_confirm_code"]');
+                if (hiddenInput) {
+                    hiddenInput.focus();
+                    // 模拟可能需要的值或触发事件
+                    hiddenInput.dispatchEvent(new Event('focus', { bubbles: true }));
+                    hiddenInput.dispatchEvent(new Event('input', { bubbles: true }));
+                    hiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+
                 try {
                     targetBtn.focus();
                     
-                    // 依次触发 mousedown, mouseup, click
-                    ['mousedown', 'mouseup', 'click'].forEach(eventType => {
-                        const evt = new MouseEvent(eventType, {
+                    // 触发标准的鼠标点击事件序列
+                    ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(eventType => {
+                        const evt = new PointerEvent(eventType, {
                             bubbles: true,
                             cancelable: true,
                             view: window,
-                            buttons: 1
+                            button: 0,
+                            buttons: 1,
+                            pointerId: 1,
+                            pointerType: 'mouse',
+                            isPrimary: true
                         });
                         targetBtn.dispatchEvent(evt);
                     });
                     
-                    // 如果框架用的是 React 内部合成事件，尝试直接调用其 click 方法
                     targetBtn.click();
                     
-                    return { found: true, allTexts: allTexts, dispatched: true };
+                    return { 
+                        found: true, 
+                        allTexts: allTexts, 
+                        hasHiddenInput: !!hiddenInput,
+                        success: true 
+                    };
                 } catch (err) {
-                    return { found: true, allTexts: allTexts, dispatched: false, error: err.toString() };
+                    return { found: true, allTexts: allTexts, success: false, error: err.toString() };
                 }
             }
         """)
 
-        print(f"-> 🔍 元素核验与 JS 派发结果: {debug_info}")
+        print(f"-> 🔍 联动触发结果: {debug_info}")
 
         # 3. 截取带有高亮标记的画面发到 TG
         debug_screenshot_path = "click_debug.png"
         page.screenshot(path=debug_screenshot_path, full_page=True)
         
         send_telegram_message(
-            f"📍 **按钮定位与强制点击诊断**:\n"
-            f"🎯 状态: `已尝试 JS 深度强制触发`\n"
+            f"📍 **联动隐藏 Input 触发诊断**:\n"
+            f"🎯 状态: `已处理隐藏输入框并触发点击`\n"
             f"📋 按钮列表:\n```\n{json.dumps(debug_info.get('allTexts', []), indent=2, ensure_ascii=False)}```",
             debug_screenshot_path,
         )
@@ -216,7 +236,7 @@ def click_discord_confirm_robust(page):
         if not debug_info['found']:
             raise RuntimeError("未能在弹窗中找到 Discord Boosted renewal 按钮")
             
-        print("-> 🚀 JS 强制触发指令已执行完毕，等待页面响应...")
+        print("-> 🚀 联动触发指令已下达，等待后端响应...")
 
     except Exception as e:
         raise RuntimeError(f"点击 Discord 按钮失败: {e}")
