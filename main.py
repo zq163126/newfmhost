@@ -144,70 +144,51 @@ def click_renew_now_robust(page):
 
 
 def click_discord_confirm_robust(page):
-    """容器级强力点击版：直接精确定位索引 [2] 的整个卡片容器并触发全套点击事件"""
-    print("-> 正在执行容器级强力点击 Discord 选项...")
+    """真人物理拟真点击版：模拟真实鼠标移动、悬停、按下与释放"""
+    print("-> 正在执行真人物理拟真点击 Discord 按钮...")
 
     try:
-        # 1. 确保弹窗可见
+        # 1. 确保弹窗可见并稳定
         dialog = page.locator('div[role="dialog"]').first
         dialog.wait_for(state="visible", timeout=10000)
-        page.wait_for_timeout(800)
-
-        # 2. 通过 JS 直接获取索引 [2] 的那个元素（即 Discord Boosted renewal 卡片），并强制触发点击
-        clicked_success = page.evaluate("""
-            () => {
-                // 寻找弹窗内的所有交互卡片/按钮
-                const buttons = Array.from(document.querySelectorAll('div[role="dialog"] button[type="button"], div[role="dialog"] [role="option"], div[role="dialog"] div.cursor-pointer'));
-                
-                // 如果上面没搜到，直接找弹窗里的所有 button
-                const allBtns = Array.from(document.querySelectorAll('div[role="dialog"] button'));
-                const target = allBtns[2] || buttons[2]; // 锁定索引 [2]
-
-                if (!target) return false;
-
-                // 移除所有可能阻碍点击的属性
-                target.removeAttribute('disabled');
-                target.style.pointerEvents = 'auto';
-
-                // 派发全套鼠标与指针事件（同时作用于该元素及其所有父级容器，防范事件代理拦截）
-                let curr = target;
-                while (curr && curr !== document.body) {
-                    ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(eventType => {
-                        curr.dispatchEvent(new MouseEvent(eventType, {
-                            bubbles: true,
-                            cancelable: true,
-                            view: window,
-                            buttons: 1
-                        }));
-                    });
-                    curr = curr.parentElement;
-                }
-
-                // 直接调用 click
-                target.click();
-                return true;
-            }
-        """)
-
-        print(f"-> 容器点击执行结果: {clicked_success}")
-
-        # 3. 顺便再用 Playwright 的坐标物理点击保险一次（对应索引 [2] 在屏幕上的大致位置）
-        target_locator = page.locator('div[role="dialog"] button').nth(2)
-        target_locator.scroll_into_view_if_needed()
-        target_locator.click(force=True)
-
         page.wait_for_timeout(1000)
 
-        # 4. 截图发送到 TG 观察效果
+        # 2. 定位到索引 [2] 的那个 Discord 按钮
+        target_btn = page.locator('div[role="dialog"] button').nth(2)
+        target_btn.scroll_into_view_if_needed()
+
+        # 3. 获取该按钮在页面上的绝对坐标位置
+        box = target_btn.bounding_box()
+        if not box:
+            raise RuntimeError("未能获取到 Discord 按钮的坐标信息")
+
+        # 计算按钮正中心坐标
+        center_x = box["x"] + box["width"] / 2
+        center_y = box["y"] + box["height"] / 2
+
+        print(f"-> 锁定按钮坐标: X={center_x}, Y={center_y}，开始模拟真人操作...")
+
+        # 4. 模拟真人：鼠标平滑移动到按钮上方 -> 悬停 200ms -> 真实按下 -> 松开
+        page.mouse.move(center_x, center_y, steps=5)  # 分 5 步平滑移动过去
+        page.wait_for_timeout(200)
+        
+        page.mouse.down(button="left")
+        page.wait_for_timeout(150)  # 模拟人类按下的短暂停留
+        page.mouse.up(button="left")
+
+        print("-> 真人物理鼠标点击动作已完成")
+        page.wait_for_timeout(1000)
+
+        # 5. 截图发送到 TG 观察效果
         debug_screenshot_path = "click_debug.png"
         page.screenshot(path=debug_screenshot_path, full_page=True)
         send_telegram_message(
-            f"📍 **容器级强力点击调试**: 已对索引 [2] 执行全链路事件派发！",
+            f"📍 **真人拟真点击调试**: 已模拟鼠标移动至 ({int(center_x)}, {int(center_y)}) 并按下！",
             debug_screenshot_path,
         )
 
     except Exception as e:
-        raise RuntimeError(f"容器级点击 Discord 按钮失败: {e}")
+        raise RuntimeError(f"真人拟真点击失败: {e}")
 
 
 def get_remaining_time(page):
