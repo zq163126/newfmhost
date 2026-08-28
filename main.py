@@ -144,8 +144,8 @@ def click_renew_now_robust(page):
 
 
 def click_discord_confirm_robust(page):
-    """已验证的高亮诊断点击版：高亮显示并使用 Playwright Locator 原生物理点击"""
-    print("-> 正在执行已验证的 Discord 按钮高亮与物理点击...")
+    """容器级强力点击版：直接精确定位索引 [2] 的整个卡片容器并触发全套点击事件"""
+    print("-> 正在执行容器级强力点击 Discord 选项...")
 
     try:
         # 1. 确保弹窗可见
@@ -153,55 +153,61 @@ def click_discord_confirm_robust(page):
         dialog.wait_for(state="visible", timeout=10000)
         page.wait_for_timeout(800)
 
-        # 2. 通过 JS 加上红黄高亮，供我们从截图直观检查
-        debug_info = page.evaluate("""
+        # 2. 通过 JS 直接获取索引 [2] 的那个元素（即 Discord Boosted renewal 卡片），并强制触发点击
+        clicked_success = page.evaluate("""
             () => {
-                const buttons = Array.from(document.querySelectorAll('div[role="dialog"] button[type="button"]'));
-                const allTexts = buttons.map((b, i) => `[${i}] -> ${b.textContent.trim().replace(/\\s+/g, ' ')}`);
+                // 寻找弹窗内的所有交互卡片/按钮
+                const buttons = Array.from(document.querySelectorAll('div[role="dialog"] button[type="button"], div[role="dialog"] [role="option"], div[role="dialog"] div.cursor-pointer'));
+                
+                // 如果上面没搜到，直接找弹窗里的所有 button
+                const allBtns = Array.from(document.querySelectorAll('div[role="dialog"] button'));
+                const target = allBtns[2] || buttons[2]; // 锁定索引 [2]
 
-                const targetBtn = buttons.find(b => {
-                    const text = b.textContent || '';
-                    return text.includes('Discord Boosted renewal');
-                });
+                if (!target) return false;
 
-                if (!targetBtn) return { found: false, allTexts: allTexts };
+                // 移除所有可能阻碍点击的属性
+                target.removeAttribute('disabled');
+                target.style.pointerEvents = 'auto';
 
-                // 加上红黄高亮框
-                targetBtn.style.border = '4px solid #ff0000';
-                targetBtn.style.backgroundColor = '#ffff00';
-                targetBtn.style.boxShadow = '0 0 20px #ff0000';
+                // 派发全套鼠标与指针事件（同时作用于该元素及其所有父级容器，防范事件代理拦截）
+                let curr = target;
+                while (curr && curr !== document.body) {
+                    ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(eventType => {
+                        curr.dispatchEvent(new MouseEvent(eventType, {
+                            bubbles: true,
+                            cancelable: true,
+                            view: window,
+                            buttons: 1
+                        }));
+                    });
+                    curr = curr.parentElement;
+                }
 
-                return { found: true, allTexts: allTexts, matchedText: targetBtn.textContent.trim() };
+                // 直接调用 click
+                target.click();
+                return true;
             }
         """)
 
-        print(f"-> 🔍 元素核验结果: {debug_info['found']}")
+        print(f"-> 容器点击执行结果: {clicked_success}")
 
-        # 3. 截取带有高亮标记的画面发到 TG
+        # 3. 顺便再用 Playwright 的坐标物理点击保险一次（对应索引 [2] 在屏幕上的大致位置）
+        target_locator = page.locator('div[role="dialog"] button').nth(2)
+        target_locator.scroll_into_view_if_needed()
+        target_locator.click(force=True)
+
+        page.wait_for_timeout(1000)
+
+        # 4. 截图发送到 TG 观察效果
         debug_screenshot_path = "click_debug.png"
         page.screenshot(path=debug_screenshot_path, full_page=True)
-        
         send_telegram_message(
-            f"📍 **按钮定位已锁定**:\n"
-            f"🎯 状态: `成功锁定 Discord 续期按钮`\n"
-            f"📋 按钮列表:\n```\n{json.dumps(debug_info.get('allTexts', []), indent=2, ensure_ascii=False)}```",
+            f"📍 **容器级强力点击调试**: 已对索引 [2] 执行全链路事件派发！",
             debug_screenshot_path,
         )
 
-        if debug_info['found']:
-            # 4. 使用 Playwright 原生 Locator 进行精确物理点击（模拟真实人类点击事件）
-            print("-> 正在对高亮元素执行 Playwright 原生物理点击...")
-            target_btn_locator = page.locator('div[role="dialog"] button[type="button"]').filter(has_text="Discord Boosted renewal").first
-            target_btn_locator.scroll_into_view_if_needed()
-            
-            # 多次触发物理点击确保触发 React/Vue 事件监听
-            target_btn_locator.click(force=True)
-            print("-> 物理点击指令已送达")
-        else:
-            raise RuntimeError("未能在弹窗中找到 Discord Boosted renewal 按钮")
-
     except Exception as e:
-        raise RuntimeError(f"点击 Discord 按钮失败: {e}")
+        raise RuntimeError(f"容器级点击 Discord 按钮失败: {e}")
 
 
 def get_remaining_time(page):
