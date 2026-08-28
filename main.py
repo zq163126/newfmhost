@@ -143,60 +143,40 @@ def click_renew_now_robust(page):
     """)
 
 
-import json
-import time
-
 def click_discord_confirm_robust(page):
-    """Radix UI 专用精准卡片按钮点击版"""
-    print("-> 正在执行 Discord 续期卡片按钮的精准打击...")
+    """终极底层原生指针点击版"""
+    print("-> 正在执行 Discord 续期卡片按钮的底层指针物理点击...")
 
     try:
         # 1. 确保弹窗可见并完全渲染
         dialog = page.locator('div[role="dialog"]').first
         dialog.wait_for(state="visible", timeout=10000)
-        page.wait_for_timeout(1000) # 给 Radix UI 留出挂载动画和事件绑定时间
+        page.wait_for_timeout(1500) # 留足 React 渲染和动画时间
 
-        # 2. 通过更精准的定位器：寻找整个弹窗中包含 "Discord Boosted renewal" 文字的那个 button 元素
+        # 2. 精准定位包含该文本的卡片按钮
         target_btn_locator = page.locator('div[role="dialog"] button').filter(has_text="Discord Boosted renewal").first
         
         # 确保元素可见并在视口内
         target_btn_locator.wait_for(state="visible", timeout=5000)
         target_btn_locator.scroll_into_view_if_needed()
-        page.wait_for_timeout(300)
+        page.wait_for_timeout(500)
 
-        # 3. 通过 JS 加上显眼的红黄高亮，并在 DOM 层面直接触发点击和 React 事件
-        clicked_ok = page.evaluate("""
-            (btn) => {
-                if (!btn) return false;
-                
-                // 加上红黄高亮，方便从截图核实
-                btn.style.border = '4px solid #ff0000';
-                btn.style.backgroundColor = '#ffff00';
-                btn.style.boxShadow = '0 0 20px #ff0000';
+        # 3. 核心大招：使用 Playwright 封装的真实指针点击（模拟浏览器底层 Mouse Event / Pointer Event）
+        # 不使用 force=True，让 Playwright 自动去寻找卡片内部最中心、最合适的坐标进行点击
+        print("-> 正在触发 Playwright 原生安全指针点击...")
+        target_btn_locator.click(
+            timeout=5000,
+            delay=150  # 在按下和释放之间人为制造 150 毫秒的真实人类停留延迟
+        )
+        
+        print("-> 物理点击指令已成功送达")
 
-                // 强制触发原生点击事件及冒泡
-                const clickEvent = new MouseEvent('click', {
-                    bubbles: true,
-                    cancelable: true,
-                    view: window,
-                    buttons: 1
-                });
-                btn.dispatchEvent(clickEvent);
-                
-                // 同时调用标准 click()
-                btn.click();
-                return true;
-            }
-        """, target_btn_locator.element_handle())
-
-        print(f"-> 🔍 按钮定位与 JS 点击触发状态: {clicked_ok}")
-
-        # 4. 截取带有高亮标记的画面发到 TG 供核查
+        # 4. 截图留存并发送 TG 供核查
         debug_screenshot_path = "click_debug.png"
         page.screenshot(path=debug_screenshot_path, full_page=True)
         
         send_telegram_message(
-            "📍 **Discord 续期按钮已精准锁定并触发**（Radix UI 卡片模式）",
+            "📍 **Discord 续期按钮底层原生指针点击已送达**",
             debug_screenshot_path,
         )
 
