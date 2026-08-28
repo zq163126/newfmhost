@@ -144,8 +144,8 @@ def click_renew_now_robust(page):
 
 
 def click_discord_confirm_robust(page):
-    """真人物理拟真点击版：模拟真实鼠标移动、悬停、按下与释放"""
-    print("-> 正在执行真人物理拟真点击 Discord 按钮...")
+    """完美拟真真人鼠标轨迹版：从空白区域平滑移动到按钮并点击"""
+    print("-> 正在执行完美拟真真人鼠标轨迹点击...")
 
     try:
         # 1. 确保弹窗可见并稳定
@@ -153,42 +153,51 @@ def click_discord_confirm_robust(page):
         dialog.wait_for(state="visible", timeout=10000)
         page.wait_for_timeout(1000)
 
-        # 2. 定位到索引 [2] 的那个 Discord 按钮
+        # 2. 定位到索引 [2] 的那个 Discord 按钮并获取坐标
         target_btn = page.locator('div[role="dialog"] button').nth(2)
         target_btn.scroll_into_view_if_needed()
 
-        # 3. 获取该按钮在页面上的绝对坐标位置
         box = target_btn.bounding_box()
         if not box:
             raise RuntimeError("未能获取到 Discord 按钮的坐标信息")
 
-        # 计算按钮正中心坐标
-        center_x = box["x"] + box["width"] / 2
-        center_y = box["y"] + box["height"] / 2
+        target_x = box["x"] + box["width"] / 2
+        target_y = box["y"] + box["height"] / 2
 
-        print(f"-> 锁定按钮坐标: X={center_x}, Y={center_y}，开始模拟真人操作...")
+        print(f"-> 目标按钮中心坐标: X={target_x}, Y={target_y}")
 
-        # 4. 模拟真人：鼠标平滑移动到按钮上方 -> 悬停 200ms -> 真实按下 -> 松开
-        page.mouse.move(center_x, center_y, steps=5)  # 分 5 步平滑移动过去
-        page.wait_for_timeout(200)
+        # 3. 模拟人类习惯：鼠标先在页面上方一个随机空白处（比如左上角附近）
+        start_x = random.randint(100, 300)
+        start_y = random.randint(50, 150)
+        page.mouse.move(start_x, start_y)
+        page.wait_for_timeout(random.randint(200, 400)) # 停顿一下
+
+        print(f"-> 模拟鼠标从 ({start_x}, {start_y}) 出发，平滑移动到目标按钮...")
+
+        # 4. 使用分步移动（steps=25）制造非常平滑的鼠标划过轨迹，完美触发 mouseenter / mouseover / mousemove
+        page.mouse.move(target_x, target_y, steps=25)
         
+        # 悬停一小会儿（模拟人类眼睛确认、准备点击的微小停顿）
+        page.wait_for_timeout(random.randint(150, 300))
+
+        # 5. 执行物理按下与释放
         page.mouse.down(button="left")
-        page.wait_for_timeout(150)  # 模拟人类按下的短暂停留
+        page.wait_for_timeout(random.randint(80, 180)) # 按下时长
         page.mouse.up(button="left")
 
-        print("-> 真人物理鼠标点击动作已完成")
+        print("-> 真人轨迹物理点击动作已完成")
         page.wait_for_timeout(1000)
 
-        # 5. 截图发送到 TG 观察效果
+        # 6. 截图发送到 TG 观察效果
         debug_screenshot_path = "click_debug.png"
         page.screenshot(path=debug_screenshot_path, full_page=True)
         send_telegram_message(
-            f"📍 **真人拟真点击调试**: 已模拟鼠标移动至 ({int(center_x)}, {int(center_y)}) 并按下！",
+            f"📍 **拟真鼠标轨迹调试**: 已完成从 ({start_x}, {start_y}) 到 ({int(target_x)}, {int(target_y)}) 的滑动点击！",
             debug_screenshot_path,
         )
 
     except Exception as e:
-        raise RuntimeError(f"真人拟真点击失败: {e}")
+        raise RuntimeError(f"真人轨迹点击失败: {e}")
 
 
 def get_remaining_time(page):
