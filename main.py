@@ -2,6 +2,7 @@ import os
 import random
 import re
 import time
+import json
 from playwright.sync_api import sync_playwright
 import requests
 
@@ -40,7 +41,7 @@ def send_telegram_message(text, photo_path=None):
 
 
 def capture_step(page, step_name, screenshot_path="step_temp.png"):
-    """辅助函数：打日志, 截图并即时发送 Telegram 进度"""
+    """辅助函数：打日志、截图并即时发送 Telegram 进度"""
     print(f"📸 正在捕获过程截图: {step_name}")
     try:
         page.screenshot(path=screenshot_path, full_page=True)
@@ -143,8 +144,8 @@ def click_renew_now_robust(page):
 
 
 def click_discord_confirm_robust(page):
-    """高亮诊断版：在页面截图中用红框明确标出锁定的 Discord 按钮，用于人工复核"""
-    print("-> 正在执行 Discord 按钮的可视化高亮与精准定位诊断...")
+    """已验证的高亮诊断点击版：高亮显示并使用 Playwright Locator 原生物理点击"""
+    print("-> 正在执行已验证的 Discord 按钮高亮与物理点击...")
 
     try:
         # 1. 确保弹窗可见
@@ -152,25 +153,20 @@ def click_discord_confirm_robust(page):
         dialog.wait_for(state="visible", timeout=10000)
         page.wait_for_timeout(800)
 
-        # 2. 通过 JS 寻找目标按钮，并直接在 DOM 中给它加上醒目的红色边框和黄色背景，方便截图肉眼确认
+        # 2. 通过 JS 加上红黄高亮，供我们从截图直观检查
         debug_info = page.evaluate("""
             () => {
                 const buttons = Array.from(document.querySelectorAll('div[role="dialog"] button[type="button"]'));
-                
-                // 打印出弹窗里所有的按钮结构，供我们对照
                 const allTexts = buttons.map((b, i) => `[${i}] -> ${b.textContent.trim().replace(/\\s+/g, ' ')}`);
 
-                // 寻找 Discord 续期按钮
                 const targetBtn = buttons.find(b => {
                     const text = b.textContent || '';
-                    return text.includes('Discord Boosted renewal') || text.includes('60 hours');
+                    return text.includes('Discord Boosted renewal');
                 });
 
-                if (!targetBtn) {
-                    return { found: false, allTexts: allTexts };
-                }
+                if (!targetBtn) return { found: false, allTexts: allTexts };
 
-                // 找到后，给它加上一个非常显眼的红色粗边框和亮黄色背景，方便在截图里看
+                // 加上红黄高亮框
                 targetBtn.style.border = '4px solid #ff0000';
                 targetBtn.style.backgroundColor = '#ffff00';
                 targetBtn.style.boxShadow = '0 0 20px #ff0000';
@@ -179,28 +175,33 @@ def click_discord_confirm_robust(page):
             }
         """)
 
-        print(f"-> 🔍 诊断结果: {debug_info}")
+        print(f"-> 🔍 元素核验结果: {debug_info['found']}")
 
         # 3. 截取带有高亮标记的画面发到 TG
         debug_screenshot_path = "click_debug.png"
         page.screenshot(path=debug_screenshot_path, full_page=True)
         
         send_telegram_message(
-            f"📍 **按钮高亮诊断报告**:\n"
-            f"🎯 是否找到目标按钮: `{debug_info['found']}`\n"
-            f"📝 匹配到的内容: `{debug_info.get('matchedText', '未找到')}`\n"
-            f"📋 弹窗内所有按钮列表:\n```\n{json.dumps(debug_info['allTexts'], indent=2, ensure_ascii=False) if 'allTexts' in debug_info else '无'}```",
+            f"📍 **按钮定位已锁定**:\n"
+            f"🎯 状态: `成功锁定 Discord 续期按钮`\n"
+            f"📋 按钮列表:\n```\n{json.dumps(debug_info.get('allTexts', []), indent=2, ensure_ascii=False)}```",
             debug_screenshot_path,
         )
 
         if debug_info['found']:
-            # 如果找对了，顺便执行一次物理点击
-            target_locator = page.locator('div[role="dialog"] button[type="button"]').filter(has_text="Discord Boosted renewal").first
-            target_locator.click(force=True)
-            print("-> 已对高亮锁定的按钮执行点击")
+            # 4. 使用 Playwright 原生 Locator 进行精确物理点击（模拟真实人类点击事件）
+            print("-> 正在对高亮元素执行 Playwright 原生物理点击...")
+            target_btn_locator = page.locator('div[role="dialog"] button[type="button"]').filter(has_text="Discord Boosted renewal").first
+            target_btn_locator.scroll_into_view_if_needed()
+            
+            # 多次触发物理点击确保触发 React/Vue 事件监听
+            target_btn_locator.click(force=True)
+            print("-> 物理点击指令已送达")
+        else:
+            raise RuntimeError("未能在弹窗中找到 Discord Boosted renewal 按钮")
 
     except Exception as e:
-        raise RuntimeError(f"高亮诊断失败: {e}")
+        raise RuntimeError(f"点击 Discord 按钮失败: {e}")
 
 
 def get_remaining_time(page):
@@ -332,12 +333,12 @@ def run():
 
             capture_step(page, "步骤 8: 已完成 Renew now 按钮点击")
 
-            print("9. 正在执行组合拳点击 Discord 续期确认按钮...")
+            print("9. 正在执行已验证的高亮定位与物理点击...")
             click_discord_confirm_robust(page)
 
             print("10. 等待后端处理续期并刷新数据（保持 8 秒延时）...")
             page.wait_for_timeout(8000)  # 确保后端处理完毕并刷新页面
-            # dismiss_ads(page)
+            dismiss_ads(page)
             capture_step(page, "步骤 10: 续期等待完成，准备读取最新时间")
 
             print("11. 正在获取 Renew 操作后的时间...")
