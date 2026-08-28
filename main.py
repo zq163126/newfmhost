@@ -120,40 +120,75 @@ def click_renew_now_robust(page):
 
 
 def click_discord_confirm_robust(page):
-    """终极修复版：使用纯定位器和安全点击，避免 JS 语法解析错误"""
-    print("-> 正在执行安全强制点击逻辑...")
+    """最终深度穿透版：绕过 Playwright 坐标点击限制，直接在浏览器内部用 JS 激活 React 事件"""
+    print("-> 正在执行深度 JS 事件链穿透点击...")
 
     try:
-        # 1. 确保弹窗可见并稳定
+        # 1. 确保弹窗可见
         dialog = page.locator('div[role="dialog"]').first
         dialog.wait_for(state="visible", timeout=10000)
-        time.sleep(2)  # 弹窗展开后适当缓冲
+        time.sleep(2)
 
-        # 2. 定位到索引 [2] 的那个 Discord 按钮
-        target_btn = page.locator('div[role="dialog"] button').nth(2)
-        target_btn.scroll_into_view_if_needed()
-        time.sleep(1)
+        # 2. 在浏览器内部直接用 JavaScript 精准定位并深度触发
+        clicked_success = page.evaluate("""() => {
+            // 寻找弹窗内的所有按钮
+            const dialogs = document.querySelectorAll('div[role="dialog"]');
+            if (dialogs.length === 0) return false;
+            
+            // 取最顶层的弹窗
+            const currentDialog = dialogs[dialogs.length - 1];
+            const buttons = currentDialog.querySelectorAll('button');
+            
+            // 如果按钮数量足够，取索引为 2 的按钮；如果不够，取最后一个或包含 Discord 的按钮
+            let targetBtn = null;
+            if (buttons.length > 2) {
+                targetBtn = buttons[2];
+            } else if (buttons.length > 0) {
+                targetBtn = buttons[buttons.length - 1];
+            }
+            
+            if (!targetBtn) return false;
 
-        # 3. 检查按钮是否被禁用
-        is_disabled = target_btn.get_attribute("disabled")
-        if is_disabled is not None:
-            print("-> 警告: 目标按钮当前处于 disabled 状态！")
+            // 强制解除所有可能的禁用和拦截属性
+            targetBtn.removeAttribute('disabled');
+            targetBtn.style.pointerEvents = 'auto';
+            targetBtn.style.display = 'block';
 
-        print("-> 正在执行 Playwright force 点击穿透...")
+            // 模拟完整的用户真实交互事件链（针对 React / Radix UI 深度优化）
+            const events = ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click', 'input', 'change'];
+            events.forEach(eventName => {
+                const event = new MouseEvent(eventName, {
+                    view: window,
+                    bubbles: true,
+                    cancelable: true,
+                    buttons: 1,
+                    clientX: targetBtn.getBoundingClientRect().x + 10,
+                    clientY: targetBtn.getBoundingClientRect().y + 10
+                });
+                targetBtn.dispatchEvent(event);
+            });
 
-        # 4. 使用 Playwright 自带的 force=True 穿透一切遮罩和事件拦截
-        target_btn.click(force=True, timeout=5000)
+            // 尝试直接调用其可能存在的 onclick 或 React 绑定的内部方法
+            if (typeof targetBtn.click === 'function') {
+                targetBtn.click();
+            }
 
-        print("-> 强制点击动作已完成")
+            return true;
+        }""")
+
+        if not clicked_success:
+            raise RuntimeError("JS 未能在弹窗中找到对应的按钮元素")
+
+        print("-> 深度 JS 穿透点击执行完毕")
         
-        # 5. 点击后严格延时 4 秒，等待后端接收请求
+        # 3. 严格延时 4 秒，等待后端接收请求
         time.sleep(4)
 
-        # 6. 截图发送到 TG 观察效果
+        # 4. 截图保存查看效果
         debug_screenshot_path = "click_debug.png"
         page.screenshot(path=debug_screenshot_path, full_page=True)
         send_telegram_message(
-            f"📍 **终极强制点击调试**: 已完成点击并等待响应！",
+            f"📍 **JS 穿透点击调试**: 已完成执行！",
             debug_screenshot_path,
         )
 
