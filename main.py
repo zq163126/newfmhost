@@ -69,32 +69,6 @@ def dismiss_ads(page):
     except Exception:
         pass
 
-    js_close_script = """
-    () => {
-        const closeIcons = Array.from(document.querySelectorAll('svg.lucide-x, #dismiss-button'));
-        for (const icon of closeIcons) {
-            const btn = icon.closest('button') || icon;
-            if (btn && typeof btn.click === 'function') {
-                btn.click();
-            }
-        }
-        const srCloses = Array.from(document.querySelectorAll('span.sr-only'));
-        for (const span of srCloses) {
-            if (span.textContent.trim() === 'Close') {
-                const btn = span.closest('button');
-                if (btn) btn.click();
-            }
-        }
-    }
-    """
-
-    frames = [page] + page.frames
-    for frame in frames:
-        try:
-            frame.evaluate(js_close_script)
-        except Exception:
-            pass
-
 
 def wait_and_click(page, locator, max_attempts=10):
     """等待并强制点击元素"""
@@ -104,9 +78,10 @@ def wait_and_click(page, locator, max_attempts=10):
         try:
             locator.first.click(force=True, timeout=1500)
             print(f"-> 成功点击目标元素（第 {attempt + 1} 次尝试）")
+            time.sleep(4)  # 严格 4 秒延时
             return True
         except Exception:
-            page.wait_for_timeout(1000)
+            time.sleep(1)
 
     raise RuntimeError(
         f"未能成功点击目标元素 ({locator})，当前页面 URL: {page.url}"
@@ -114,7 +89,7 @@ def wait_and_click(page, locator, max_attempts=10):
 
 
 def click_renew_now_robust(page):
-    """全方位穿透式点击 Renew now 按钮"""
+    """全方位穿透式点击 Renew now 按钮，附带严格延时"""
     dismiss_ads(page)
     print("-> 正在强力触发 Renew now...")
 
@@ -141,21 +116,23 @@ def click_renew_now_robust(page):
             }
         }
     """)
+    time.sleep(4)  # 点击后严格延时 4 秒等待弹窗完全展开
 
 
 def click_discord_confirm_robust(page):
-    """完美拟真真人鼠标轨迹版：从空白区域平滑移动到按钮并点击"""
-    print("-> 正在执行完美拟真真人鼠标轨迹点击...")
+    """完美拟真鼠标轨迹版：加入严格的 4 秒前后缓冲延时"""
+    print("-> 正在执行严格缓冲的真人鼠标轨迹点击...")
 
     try:
         # 1. 确保弹窗可见并稳定
         dialog = page.locator('div[role="dialog"]').first
         dialog.wait_for(state="visible", timeout=10000)
-        page.wait_for_timeout(1000)
+        time.sleep(4)  # 弹窗展开后强制等待 4 秒，确保动画和事件绑定完全就绪
 
         # 2. 定位到索引 [2] 的那个 Discord 按钮并获取坐标
         target_btn = page.locator('div[role="dialog"] button').nth(2)
         target_btn.scroll_into_view_if_needed()
+        time.sleep(1)
 
         box = target_btn.bounding_box()
         if not box:
@@ -166,33 +143,33 @@ def click_discord_confirm_robust(page):
 
         print(f"-> 目标按钮中心坐标: X={target_x}, Y={target_y}")
 
-        # 3. 模拟人类习惯：鼠标先在页面上方一个随机空白处（比如左上角附近）
+        # 3. 模拟人类习惯：鼠标先从页面上方的随机空白处出发
         start_x = random.randint(100, 300)
         start_y = random.randint(50, 150)
         page.mouse.move(start_x, start_y)
-        page.wait_for_timeout(random.randint(200, 400)) # 停顿一下
+        time.sleep(1)
 
         print(f"-> 模拟鼠标从 ({start_x}, {start_y}) 出发，平滑移动到目标按钮...")
 
-        # 4. 使用分步移动（steps=25）制造非常平滑的鼠标划过轨迹，完美触发 mouseenter / mouseover / mousemove
+        # 4. 密集平滑移动轨迹
         page.mouse.move(target_x, target_y, steps=25)
-        
-        # 悬停一小会儿（模拟人类眼睛确认、准备点击的微小停顿）
-        page.wait_for_timeout(random.randint(150, 300))
+        time.sleep(1)  # 悬停停顿 1 秒
 
         # 5. 执行物理按下与释放
         page.mouse.down(button="left")
-        page.wait_for_timeout(random.randint(80, 180)) # 按下时长
+        time.sleep(0.3)
         page.mouse.up(button="left")
 
         print("-> 真人轨迹物理点击动作已完成")
-        page.wait_for_timeout(1000)
+        
+        # 6. 点击后严格延时 4 秒，等待后端接收请求
+        time.sleep(4)
 
-        # 6. 截图发送到 TG 观察效果
+        # 7. 截图发送到 TG 观察效果
         debug_screenshot_path = "click_debug.png"
         page.screenshot(path=debug_screenshot_path, full_page=True)
         send_telegram_message(
-            f"📍 **拟真鼠标轨迹调试**: 已完成从 ({start_x}, {start_y}) 到 ({int(target_x)}, {int(target_y)}) 的滑动点击！",
+            f"📍 **4秒缓冲轨迹点击调试**: 已完成滑动点击并等待响应！",
             debug_screenshot_path,
         )
 
@@ -254,11 +231,14 @@ def run():
         try:
             print("1. 正在访问登录页面...")
             page.goto("https://freemchost.com/login", wait_until="networkidle")
+            time.sleep(4)
             dismiss_ads(page)
 
             print("2. 正在输入凭据...")
             page.locator("#email").fill(EMAIL)
+            time.sleep(1)
             page.locator("#password").fill(PASSWORD)
+            time.sleep(1)
 
             print("3. 点击 Sign in...")
             signin_btn = page.locator(
@@ -271,6 +251,7 @@ def run():
                 page.wait_for_url(
                     "**/app**", timeout=15000, wait_until="networkidle"
                 )
+                time.sleep(4)
                 print(f"-> 成功检测到后台特征 URL，当前位置: {page.url}")
             except Exception:
                 raise RuntimeError(
@@ -282,22 +263,22 @@ def run():
                 "https://freemchost.com/app/servers/2f12a6bd-a1c1-4cc1-bd32-8becf1925680",
                 wait_until="networkidle",
             )
-            page.wait_for_timeout(2000)
+            time.sleep(4)
             dismiss_ads(page)
             capture_step(page, "步骤 5: 已跳转到目标服务器页面")
 
-            print("6. 正在寻找并点击 Manage 标签页（共点击 2 次，间隔 2 秒）...")
+            print("6. 正在寻找并点击 Manage 标签页...")
             manage_tab = page.locator(
                 'button[role="tab"]:has-text("Manage"), button:has-text("Manage")'
             )
 
             print("-> 第一次点击 Manage...")
             wait_and_click(page, manage_tab, max_attempts=12)
-            page.wait_for_timeout(2000)
+            time.sleep(4)
 
             print("-> 第二次点击 Manage...")
             wait_and_click(page, manage_tab, max_attempts=12)
-            page.wait_for_timeout(2000)
+            time.sleep(4)
 
             capture_step(page, "步骤 6: 已完成 2 次 Manage 标签页点击")
 
@@ -325,15 +306,15 @@ def run():
 
             print("8. 剩余时间小于等于 36 小时，正在执行 Renew now 全套事件派发点击...")
             click_renew_now_robust(page)
-            page.wait_for_timeout(3000)
+            time.sleep(4)
 
             capture_step(page, "步骤 8: 已完成 Renew now 按钮点击")
 
-            print("9. 正在执行已验证的高亮定位与物理点击...")
+            print("9. 正在执行严格缓冲的真人轨迹点击 Discord 续期确认按钮...")
             click_discord_confirm_robust(page)
 
             print("10. 等待后端处理续期并刷新数据（保持 8 秒延时）...")
-            page.wait_for_timeout(8000)  # 确保后端处理完毕并刷新页面
+            time.sleep(8)  # 确保后端处理完毕并刷新页面
             dismiss_ads(page)
             capture_step(page, "步骤 10: 续期等待完成，准备读取最新时间")
 
@@ -343,7 +324,7 @@ def run():
             print(
                 f"-> 续期后时间: {time_after} (折合 {total_hours_after} 小时)"
             )
-            capture_step(page, f"步骤 11: 续期结束，最新时间: {time_after}")
+            capture_step(page, "步骤 11: 续期结束，最新时间: {time_after}")
 
             page.screenshot(path=screenshot_path, full_page=True)
 
