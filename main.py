@@ -322,11 +322,11 @@ def run():
 
             print("-> 第一次点击 Manage...")
             wait_and_click(page, manage_tab, max_attempts=12)
-            page.wait_for_timeout(2000)
+            page.wait_for_timeout(4000)
 
             print("-> 第二次点击 Manage...")
             wait_and_click(page, manage_tab, max_attempts=12)
-            page.wait_for_timeout(2000)
+            page.wait_for_timeout(4000)
 
             capture_step(page, "步骤 6: 已完成 2 次 Manage 标签页点击")
 
