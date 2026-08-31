@@ -120,52 +120,60 @@ def click_renew_now_robust(page):
 
 
 def click_discord_confirm_robust(page):
-    """进阶组合拳：聚焦 + 硬件回车模拟 + 强制 JS 事件 + 原生 Playwright 强力点击"""
-    print("-> 正在执行聚焦与键盘回车组合拳点击...")
+    """完美拟真真人鼠标轨迹版：从空白区域平滑移动到按钮并点击"""
+    print("-> 正在执行完美拟真真人鼠标轨迹点击...")
 
     try:
-        # 1. 确保弹窗可见
+        # 1. 确保弹窗可见并稳定
         dialog = page.locator('div[role="dialog"]').first
         dialog.wait_for(state="visible", timeout=10000)
-        time.sleep(2)
+        page.wait_for_timeout(1000)
 
-        # 2. 定位到目标按钮并高亮
-        target_btn_locator = page.locator('div[role="dialog"] button').nth(2)
-        target_btn_locator.scroll_into_view_if_needed()
+        # 2. 定位到索引 [2] 的那个 Discord 按钮并获取坐标
+        target_btn = page.locator('div[role="dialog"] button').nth(2)
+        target_btn.scroll_into_view_if_needed()
 
-        # 3. 在浏览器内执行：强制解除拦截 + 获得焦点 + 键盘回车模拟
-        page.evaluate("""() => {
-            const dialogs = document.querySelectorAll('div[role="dialog"]');
-            if (dialogs.length === 0) return;
-            const currentDialog = dialogs[dialogs.length - 1];
-            const buttons = currentDialog.querySelectorAll('button');
-            const targetBtn = buttons.length > 2 ? buttons[2] : buttons[buttons.length - 1];
-            if (!targetBtn) return;
+        box = target_btn.bounding_box()
+        if not box:
+            raise RuntimeError("未能获取到 Discord 按钮的坐标信息")
 
-            targetBtn.removeAttribute('disabled');
-            targetBtn.style.pointerEvents = 'auto';
-            targetBtn.style.border = '5px solid red';
-            targetBtn.style.backgroundColor = 'yellow';
+        target_x = box["x"] + box["width"] / 2
+        target_y = box["y"] + box["height"] / 2
 
-            // 强制让元素获得焦点（Focus Trap 关键步骤）
-            targetBtn.focus();
-        }""")
+        print(f"-> 目标按钮中心坐标: X={target_x}, Y={target_y}")
 
-        time.sleep(1)
+        # 3. 模拟人类习惯：鼠标先在页面上方一个随机空白处（比如左上角附近）
+        start_x = random.randint(100, 300)
+        start_y = random.randint(50, 150)
+        page.mouse.move(start_x, start_y)
+        page.wait_for_timeout(random.randint(200, 400)) # 停顿一下
 
-        # 4. 使用 Playwright 原生的聚焦后回车 (Enter) 触发
-        try:
-            print("-> 尝试使用键盘 Enter 键触发按钮...")
-            target_btn_locator.press("Enter")
-        except Exception as e:
-            print(f"-> 键盘 Enter 触发异常: {e}")
+        print(f"-> 模拟鼠标从 ({start_x}, {start_y}) 出发，平滑移动到目标按钮...")
 
-        # 5. 再次通过 Playwright 原生带偏移量的 click 强力点击
-        try:
-            print("-> 尝试使用 Playwright 坐标中心点强制点击...")
-            target_btn_locator.click(force=True, timeout=3000)
-        except Exception as e:
-            print(f"-> 坐标强制点击异常: {e}")
+        # 4. 使用分步移动（steps=25）制造非常平滑的鼠标划过轨迹，完美触发 mouseenter / mouseover / mousemove
+        page.mouse.move(target_x, target_y, steps=25)
+        
+        # 悬停一小会儿（模拟人类眼睛确认、准备点击的微小停顿）
+        page.wait_for_timeout(random.randint(150, 300))
+
+        # 5. 执行物理按下与释放
+        page.mouse.down(button="left")
+        page.wait_for_timeout(random.randint(80, 180)) # 按下时长
+        page.mouse.up(button="left")
+
+        print("-> 真人轨迹物理点击动作已完成")
+        page.wait_for_timeout(1000)
+
+        # 6. 截图发送到 TG 观察效果
+        debug_screenshot_path = "click_debug.png"
+        page.screenshot(path=debug_screenshot_path, full_page=True)
+        send_telegram_message(
+            f"📍 **拟真鼠标轨迹调试**: 已完成从 ({start_x}, {start_y}) 到 ({int(target_x)}, {int(target_y)}) 的滑动点击！",
+            debug_screenshot_path,
+        )
+
+    except Exception as e:
+        raise RuntimeError(f"真人轨迹点击失败: {e}")
 
         # 6. 后台组合 JS 事件再次触发
         page.evaluate("""() => {
