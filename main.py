@@ -268,7 +268,7 @@ def run():
             page.wait_for_timeout(2000)
             dismiss_ads(page)
             capture_step(page, "步骤 5: 已跳转到目标服务器页面")
-
+            delay=2000
             print("6. 正在寻找并点击 Manage 标签页（共点击 2 次，间隔 2 秒）...")
             manage_tab = page.locator(
                 'button[role="tab"]:has-text("Manage"), button:has-text("Manage")'
@@ -277,7 +277,7 @@ def run():
             print("-> 第一次点击 Manage...")
             wait_and_click(page, manage_tab, max_attempts=12)
             page.wait_for_timeout(4000)
-
+            delay=2000
             print("-> 第二次点击 Manage...")
             wait_and_click(page, manage_tab, max_attempts=12)
             page.wait_for_timeout(4000)
