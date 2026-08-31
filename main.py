@@ -91,7 +91,7 @@ def wait_and_click(page, locator, max_attempts=10):
 def click_renew_now_robust(page):
     """全方位穿透式点击 Renew now 按钮，附带严格延时"""
     dismiss_ads(page)
-    print("-> 正在强力触发 Renew now...")
+    print("-> 强力触发 Renew now...")
 
     page.evaluate("""
         () => {
@@ -120,8 +120,8 @@ def click_renew_now_robust(page):
 
 
 def click_discord_confirm_robust(page):
-    """精准高亮调试版：给目标元素加粗红框与黄底高亮，并立刻截图发送 Telegram 供您人工核对"""
-    print("-> 正在执行高亮定位与调试点击逻辑...")
+    """进阶组合拳：聚焦 + 硬件回车模拟 + 强制 JS 事件 + 原生 Playwright 强力点击"""
+    print("-> 正在执行聚焦与键盘回车组合拳点击...")
 
     try:
         # 1. 确保弹窗可见
@@ -129,56 +129,54 @@ def click_discord_confirm_robust(page):
         dialog.wait_for(state="visible", timeout=10000)
         time.sleep(2)
 
-        # 2. 通过 JS 找到元素，打上显眼的红框黄底高亮
-        highlight_success = page.evaluate("""() => {
-            const dialogs = document.querySelectorAll('div[role="dialog"]');
-            if (dialogs.length === 0) return false;
-            
-            const currentDialog = dialogs[dialogs.length - 1];
-            const buttons = currentDialog.querySelectorAll('button');
-            
-            let targetBtn = null;
-            if (buttons.length > 2) {
-                targetBtn = buttons[2];
-            } else if (buttons.length > 0) {
-                targetBtn = buttons[buttons.length - 1];
-            }
-            
-            if (!targetBtn) return false;
+        # 2. 定位到目标按钮并高亮
+        target_btn_locator = page.locator('div[role="dialog"] button').nth(2)
+        target_btn_locator.scroll_into_view_if_needed()
 
-            // 核心：强制给它加一个粗红框和黄色背景，一眼看出点的是哪个
-            targetBtn.style.border = '5px solid red';
-            targetBtn.style.backgroundColor = 'yellow';
-            targetBtn.style.zIndex = '999999';
-            
-            return true;
-        }""")
-
-        if not highlight_success:
-            raise RuntimeError("未能找到用于高亮的按钮元素")
-
-        # 3. 立即截图发送给 Telegram，让您直观检查是否精准定位到了目标
-        inspect_screenshot_path = "element_inspect.png"
-        page.screenshot(path=inspect_screenshot_path, full_page=True)
-        send_telegram_message(
-            f"🔍 **元素定位高亮检查**: 请查看图片，带**红框黄底**的元素是否为您要点的 Discord 确认按钮？",
-            inspect_screenshot_path,
-        )
-        time.sleep(3) # 留出时间让截图发出去
-
-        # 4. 再次通过 JS 触发全套点击事件
+        # 3. 在浏览器内执行：强制解除拦截 + 获得焦点 + 键盘回车模拟
         page.evaluate("""() => {
             const dialogs = document.querySelectorAll('div[role="dialog"]');
+            if (dialogs.length === 0) return;
             const currentDialog = dialogs[dialogs.length - 1];
             const buttons = currentDialog.querySelectorAll('button');
-            let targetBtn = buttons.length > 2 ? buttons[2] : buttons[buttons.length - 1];
+            const targetBtn = buttons.length > 2 ? buttons[2] : buttons[buttons.length - 1];
             if (!targetBtn) return;
 
             targetBtn.removeAttribute('disabled');
             targetBtn.style.pointerEvents = 'auto';
+            targetBtn.style.border = '5px solid red';
+            targetBtn.style.backgroundColor = 'yellow';
 
-            const events = ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'];
-            events.forEach(eventName => {
+            // 强制让元素获得焦点（Focus Trap 关键步骤）
+            targetBtn.focus();
+        }""")
+
+        time.sleep(1)
+
+        # 4. 使用 Playwright 原生的聚焦后回车 (Enter) 触发
+        try:
+            print("-> 尝试使用键盘 Enter 键触发按钮...")
+            target_btn_locator.press("Enter")
+        except Exception as e:
+            print(f"-> 键盘 Enter 触发异常: {e}")
+
+        # 5. 再次通过 Playwright 原生带偏移量的 click 强力点击
+        try:
+            print("-> 尝试使用 Playwright 坐标中心点强制点击...")
+            target_btn_locator.click(force=True, timeout=3000)
+        except Exception as e:
+            print(f"-> 坐标强制点击异常: {e}")
+
+        # 6. 后台组合 JS 事件再次触发
+        page.evaluate("""() => {
+            const dialogs = document.querySelectorAll('div[role="dialog"]');
+            if (dialogs.length === 0) return;
+            const currentDialog = dialogs[dialogs.length - 1];
+            const buttons = currentDialog.querySelectorAll('button');
+            const targetBtn = buttons.length > 2 ? buttons[2] : buttons[buttons.length - 1];
+            if (!targetBtn) return;
+
+            ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(eventName => {
                 const event = new MouseEvent(eventName, {
                     view: window,
                     bubbles: true,
@@ -187,27 +185,23 @@ def click_discord_confirm_robust(page):
                 });
                 targetBtn.dispatchEvent(event);
             });
-
-            if (typeof targetBtn.click === 'function') {
-                targetBtn.click();
-            }
         }""")
 
-        print("-> 高亮定位与点击动作已完成")
+        print("-> 组合拳点击动作执行完毕")
         
-        # 5. 点击后严格延时 4 秒，等待后端接收请求
+        # 7. 点击后严格延时 4 秒，等待后端接收请求
         time.sleep(4)
 
-        # 6. 再次截图发送到 TG 观察点击后的页面变化
+        # 8. 截图发送到 TG 观察效果
         debug_screenshot_path = "click_debug.png"
         page.screenshot(path=debug_screenshot_path, full_page=True)
         send_telegram_message(
-            f"📍 **高亮点击后调试**: 已完成点击并等待响应！",
+            f"📍 **组合拳点击调试**: 键盘回车与强制点击已完成！",
             debug_screenshot_path,
         )
 
     except Exception as e:
-        raise RuntimeError(f"高亮点击失败: {e}")
+        raise RuntimeError(f"强制点击失败: {e}")
 
 
 def get_remaining_time(page):
@@ -304,7 +298,7 @@ def run():
             manage_tab = page.locator(
                 'button[role="tab"]:has-text("Manage"), button:has-text("Manage")'
             )
-            time.sleep(3)
+
             print("-> 第一次点击 Manage...")
             wait_and_click(page, manage_tab, max_attempts=12)
             time.sleep(4)
@@ -343,7 +337,7 @@ def run():
 
             capture_step(page, "步骤 8: 已完成 Renew now 按钮点击")
 
-            print("9. 正在执行带高亮视觉检查的 Discord 确认按钮点击...")
+            print("9. 正在执行聚焦与回车组合拳点击 Discord 确认按钮...")
             click_discord_confirm_robust(page)
 
             print("10. 等待后端处理续期并刷新数据（保持 8 秒延时）...")
