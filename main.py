@@ -295,7 +295,7 @@ def run():
 
             print("5. 正在跳转至指定的目标服务器面板页面...")
             page.goto(
-                "https://freemchost.com/app/servers/2f12a6bd-a1c1-4cc1-bd32-8becf1925680",
+                "https://freemchost.com/app/servers/0ac36ad6-6dbe-4766-a92e-498d68866539",
                 wait_until="networkidle",
             )
             time.sleep(4)
