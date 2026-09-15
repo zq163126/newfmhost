@@ -151,4 +151,5 @@ jobs:
         TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         PROXY_SOCKS5: ${{ env.PROXY_SOCKS5 }}
       run: |
-        python main.py
+        sudo apt-get update && sudo apt-get install -y xvfb libxkbcommon-x11-0
+        xvfb-run -a python main.py
