@@ -193,7 +193,7 @@ def click_discord_boost_renewal(page):
 def get_remaining_time(page):
     """获取当前的剩余续期时间"""
     dismiss_maybe_later(page)
-    timer_element = page.locator('div[role="timer"]').first
+    timer_element = page.locator('span[role="timer"], div[role="timer"]').first
     timer_element.wait_for(state="visible", timeout=15000)
 
     aria_label = timer_element.get_attribute("aria-label")
@@ -206,7 +206,7 @@ def get_remaining_time(page):
 
 
 def parse_total_hours(time_str):
-    """将类似 '0d 10h 7m 37s remaining' 的文本换算为总小时数"""
+    """将类似 '2d 21h 32m 15s remaining' 的文本换算为总小时数"""
     days = 0
     hours = 0
     minutes = 0
@@ -274,19 +274,11 @@ def run():
             dismiss_maybe_later(page)
             capture_step(page, "步骤 4: 已访问服务总览页 /app/servers")
 
-            print("5. 正在访问目标服务器面板页面...")
-            dismiss_maybe_later(page)
-            page.goto(TARGET_URL, wait_until="networkidle")
-            time.sleep(4)
-            dismiss_ads(page)
-            dismiss_maybe_later(page)
-            capture_step(page, "步骤 5: 已跳转到目标服务器页面")
-
-            print("6. 正在获取剩余续期时间并判断（<= 24小时阈值）...")
+            print("5. 正在获取剩余续期时间并判断（<= 24小时阈值）...")
             time_before = get_remaining_time(page)
             total_hours = parse_total_hours(time_before)
             print(f"-> 当前剩余续期时间: {time_before} (约 {total_hours:.1f} 小时)")
-            capture_step(page, f"步骤 6: 读取剩余时间 ({time_before})")
+            capture_step(page, f"步骤 5: 读取剩余时间 ({time_before})")
 
             if total_hours > 24:
                 msg = (
@@ -298,6 +290,14 @@ def run():
                 print(f"-> {msg}")
                 send_telegram_message(msg, "step_temp.png")
                 return
+
+            print("6. 正在访问目标服务器面板页面执行续期...")
+            dismiss_maybe_later(page)
+            page.goto(TARGET_URL, wait_until="networkidle")
+            time.sleep(4)
+            dismiss_ads(page)
+            dismiss_maybe_later(page)
+            capture_step(page, "步骤 6: 已跳转到目标服务器页面")
 
             print("7. 剩余时间 <= 24 小时，执行 Renew now...")
             click_renew_now_robust(page)
@@ -311,7 +311,11 @@ def run():
             dismiss_ads(page)
             dismiss_maybe_later(page)
 
-            print("10. 获取续期后最新时间...")
+            print("10. 返回服务列表页获取续期后最新时间...")
+            page.goto("https://freemchost.com/app/servers", wait_until="networkidle")
+            time.sleep(4)
+            dismiss_ads(page)
+            dismiss_maybe_later(page)
             time_after = get_remaining_time(page)
             total_hours_after = parse_total_hours(time_after)
             print(f"-> 续期后时间: {time_after} (约 {total_hours_after:.1f} 小时)")
@@ -332,6 +336,7 @@ def run():
             print(f"❌ 运行过程中发生错误: {e}")
             try:
                 dismiss_ads(page)
+                dismiss_maybe_later(page)
                 page.screenshot(path=screenshot_path, full_page=True)
                 error_msg = f"❌ **Freemchost 自动续期任务失败**\n\n**错误原因**: `{str(e)}`"
                 send_telegram_message(error_msg, screenshot_path)
