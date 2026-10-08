@@ -12,7 +12,7 @@ TG_BOT_TOKEN = os.environ.get("TG_BOT_TOKEN")
 TG_CHAT_ID = os.environ.get("TG_CHAT_ID")
 PROXY_SOCKS5 = os.environ.get("PROXY_SOCKS5", "").strip()
 
-TARGET_URL = "https://freemchost.com/app/servers/0ac36ad6-6dbe-4766-a92e-498d68866539"
+TARGET_URL = "https://freemchost.com/app/servers/c7c2b4fa-c774-4ef4-ba73-11a8072819c9"
 
 
 def send_telegram_message(text, photo_path=None):
